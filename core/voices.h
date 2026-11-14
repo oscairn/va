@@ -128,6 +128,7 @@ struct Sound {
     // e the amplitude EG: the amplitude saturator acts after it), their gain in `level`; sat: any saturator acts.
     bool sat = false;
     float satC = 0, satCa = 0;
+    float satK = 0;  // the x^2 term's DC is taken out (the reference's output carries none): a one-pole mean of it at 5 Hz, this a frame
     float gain = 1, panL = 0.70710678f, panR = 0.70710678f;  // the caller's level and pan
     // Unison (laws.cpp): a note sounds as `unison` engine voices (1, 2 or 4), each a whole voice with its own free-running phases and
     // drift; copy c is detuned by uniDet[c] semitones and weighed by uniL[c] / uniR[c] (its level and its place in the spread).
@@ -148,7 +149,7 @@ enum Field {
     GL, DGL, GR, DGR,
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
-    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, UDET, UGL, UGR,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, SDC, UDET, UGL, UGR,
     NFIELDS
 };
 constexpr int kStageAttack = 0, kStageDecay = 1, kStageRelease = 2;

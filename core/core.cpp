@@ -378,10 +378,13 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
 template <bool LP, bool HP, bool O3>
 VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) { controlBody<LP, HP, O3, false>(l, s, c); }
 
-// The saturators after the filters (laws.cpp applyLaws): y = x + c x^2 per sample, c per voice.
-VC_NOINLINE void saturate(const Lane& l, int n, vf* buf) {
-    const vf c = l(SATC);
-    for (int k = 0; k < n; ++k) buf[k] = fma(c * buf[k], buf[k], buf[k]);
+// The saturators after the filters (laws.cpp applyLaws): y = x + c x^2 - m per sample, c per voice, m the x^2 term's running mean
+// (va-round7 X1: the reference's output has no DC at any drive, under 1e-5 of the fundamental where c x^2 would give 6e-3).
+VC_NOINLINE void saturate(const Lane& l, float kk, int n, vf* buf) {
+    const vf c = l(SATC), k = splat(kk);
+    vf m = l(SDC);
+    for (int i = 0; i < n; ++i) { const vf q = c * buf[i] * buf[i]; m = fma(k, q - m, m); buf[i] = buf[i] + (q - m); }
+    l.set(SDC, m);
 }
 
 VC_INLINE void amp(const Lane& l, const vf* buf, int n, vf* accL, vf* accR) {
@@ -425,7 +428,7 @@ struct Plan {
         }
         if constexpr (LP) { if constexpr (kHot) filterHot<N, 1>(s.flt[0].type, l, L1, c.n, buf); else filterStage<N>(s.flt[0].type, l, L1, c.n, buf); }
         if constexpr (HP) { if constexpr (kHot) filterHot<N, 5>(s.flt[1].type, l, H1, c.n, buf); else filterStage<N>(s.flt[1].type, l, H1, c.n, buf); }
-        if (s.sat) for (int m = 0; m < N; ++m) saturate(l[m], c.n, buf[m]);
+        if (s.sat) for (int m = 0; m < N; ++m) saturate(l[m], s.satK, c.n, buf[m]);
         for (int m = 0; m < N; ++m) amp(l[m], buf[m], c.n, aL, aR);
     }
     static void run(Pool& p, const Sound& s, const Ctl& c, vf* aL, vf* aR, int interleave) {

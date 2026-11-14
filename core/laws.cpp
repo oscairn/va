@@ -550,6 +550,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     const double ca = ia > 0 ? kSatAmpA2[ia] * g : 0;
     if (ia > 0) g *= std::pow(10.0, kSatAmpDb[ia] / 20);
     s.sat = c != 0 || ca != 0; s.satC = float(c / kSatUnit); s.satCa = float(ca / kSatUnit);
+    s.satK = float(1 - std::exp(-2 * kPi * 5 / sr));  // shortcut: the 5 Hz corner of the DC removal is not measured (only that no DC remains)
     s.level = float(std::pow(10.0, db / 20) * g);
 }
 

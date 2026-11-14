@@ -986,6 +986,17 @@ static void testSaturators() {
     decaying("Filter1FilterSaturatorDrive=23", &fall, &h2fall);
     std::printf("filter saturator 23 over the EG's decay: level falls %.1f dB, h2 against h1 %.1f dB\n", fall, h2fall);
     CHECK(fall > 10 && std::fabs(h2fall) < 0.2);
+    // no DC (va-round7 X1: the reference's mean over whole periods under 1e-5 of the fundamental at every drive; c x^2 alone gives 6e-3 at 23)
+    for (const char* extra : {"Filter1FilterSaturatorDrive=23", "AmplitudeSaturatorDrive=23"}) {
+        std::vector<float> L; double h[1];
+        harmonics((sine + extra).c_str(), 36, h, 1, 0, 2 * 44100, &L);
+        const size_t from = 22050, n = size_t(44100 / 65.406 * 40);  // 40 whole periods
+        double m = 0; for (size_t i = from; i < from + n; ++i) m += L[i];
+        m /= double(n);
+        const double a = std::sqrt(std::pow(10, h[0] / 10)) * 4 / double(2 * 44100);  // the fundamental's amplitude (Hann window: sum w = n / 2)
+        std::printf("saturator %s: mean %.2e of the fundamental\n", extra, std::fabs(m) / a);
+        CHECK(std::fabs(m) < 1e-4 * a);
+    }
     Gap g[64]; Patch q = plain();
     q.set(Filter1FilterSaturatorDrive, 23); q.set(Filter2FilterSaturatorDrive, 15); q.set(AmplitudeSaturatorDrive, 8);
     CHECK(notCovered(q, g, 64) == 1 && g[0].param == Filter1FilterSaturatorDrive);  // filter 2 a filter: filter 1's runs after it

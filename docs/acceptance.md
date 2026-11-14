@@ -252,6 +252,7 @@ the fundamental. The engine renders the same patches (tests/core `testSaturators
 | three sines in phase (amplitude 3), filter drives 7 / 8 / 15 / 23, amplitude 8 / 23 (va-round7 S2) | g +1.075 / +1.167 / +1.051 / +0.659 dB, +0.595 / +1.590 dB; a2 0.00290 / 0.00316 / 0.00579 / 0.01148, 0.00209 / 0.00748; h3 -68 to -64 dB, at 23 -52 (filter) and -46 dB (amplitude) | the single-amplitude g and a2 (the law has no x^3) | 0.15 dB; 2 % | pass (h3 at 23 a known difference) |
 | the amplitude saturator over the amplitude EG's decay (drive 23) and at amplitude levels 300 / 431 | h2 against h1 falls 18.4 dB as the level falls 18.0 dB (0.3-2.5 s); -48.35 dB at both levels as at 511 | after the EG (tests/core: within 1 dB of the level's fall), before the level | 1 dB | pass |
 | residual odd harmonics at drives 2-16 | h5, h7, h9 at -62 to -73 dB against h1 (none at drive 0) | none | | known difference |
+| DC (round 8: the mean over whole periods of X1's takes, filter 1 at 0 / 7 / 15 / 23, filter 2 at 15, amplitude at 8 / 23, a saw at 23) | under 1e-5 of the fundamental at every drive (the x^2 term alone would leave 5.8e-3 at filter drive 23) | 2.3e-6 (the x^2 term's running mean taken out per voice, a one-pole at 5 Hz; tests/core) | 1e-4 | pass (the removal's corner is not measured) |
 
 # Acceptance: unison (round 8)
 
