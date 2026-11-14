@@ -58,10 +58,34 @@ Where the 12.1k a voice of 0.6.0 went against the 6.9k of the core timed at comm
 step, 1.0k more than the TPT pair), and 1.45k is the out-of-line structure (layout 0 against 2: calls per lane and step, the
 ramps' state stored and reloaded across the calls, the filter type's switch). Layout 1 recovers all of the latter for the hot plans
 at 381 KB, but not the 8.5k a voice asked for: probe A stays at 10.4k because of its filters. The default stays layout 0 until
-the device timing decides. One lane at a time is now cheaper than two interleaved in layout 0 (88,569 against 94,633 a block;
+the device timing decides, and the device's hosted timing of 0.6.0 (layout 0) supports keeping it: there the maximum block rose
+about 25 % against 0.4.0 where the instructions rose 1.7x (the four cores share one 512 KB L2, so text and table bytes weigh
+alongside instructions).
+
+Bytes touched a block (callgrind with per-instruction counts, aarch64, the distinct 64-byte lines of `core.cpp` code executed in one
+128-frame block; tables from the table layout, not measured):
+
+| case | layout 0: instructions / code touched | layout 1: instructions / code touched |
+|---|---|---|
+| probe A, 8 held | 95,130 / 15.7 KB | 83,426 / 14.5 KB |
+| the pattern (4.1 voices) | 59,188 / 14.6 KB | 54,541 / 15.6 KB |
+
+The code one plan touches is about the same in both layouts; layout 1's cost is that each hot plan carries its own copy (381 KB
+of text against 250 KB), so several different sounds playing at once touch about 12 KB more code each, where layout 0's are shared.
+Tables a voice reads: two adjacent levels of each oscillator's set (16 KB an oscillator; probe A's 8 voices on keys 84-91 about
+33-66 KB) and about 1.7 KB of filter laws; the same in both layouts. Layout 1 does not win on both counts, so layout 0 stays the
+default. One lane at a time is now cheaper than two interleaved in layout 0 (88,569 against 94,633 a block;
 layout 2: 81,913 against 82,889): the interleaved filter loop of two lanes no longer pays in instructions.
 
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
+
+**Round 6, final** (with the round's destinations: the frequency offsets and the boxes' new outputs at each control step):
+rest 213, 1 held 49,906, 4 held 49,930, 8 held 95,130 (**11.9k a voice**), 16 held 179,427, 8 held one lane at a time 89,066,
+the pattern 59,188 (max 97,232); hosted rest 779, hosted 8 held 97,481 (+2.5 %), hosted pattern 60,695; plans per voice at 8: saw
+4,529, saw + pulse 6,325, saw + LPF24 10,103, probe A without filter 2 9,132, saw + LPF18 6,698, three LFOs 12,405, 16 boxes 13,098,
+a third oscillator **14,005**, a pulse width LFO **13,859** (gate 15k); `core.cpp` text 250,204 bytes (layout 1: 382,172; 8 held
+83,426). The baseline takes these figures. Table bytes: the round adds `LawTables::lfoHz` (416 floats, 1.7 KB, read once per sound
+a step only when a box moves the pitch LFO's speed).
 
 **Round 6** (the trims above): rest 213, 1 held 49,401, 4 held 49,425, 8 held 94,633 (**11.8k a voice**), 16 held 178,946, 8
 held one lane at a time 88,569, the pattern 58,683 (max 96,735); shedding 8 / 16: 100,097 / 185,561 then 30,993 / 58,575, then

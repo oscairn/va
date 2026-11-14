@@ -2,12 +2,12 @@
 # tools/cost/cg.sh on aarch64 Linux (g++ 13.3 -O3 -mcpu=cortex-a53, NEON, two lanes interleaved).
 # `cg.sh SRC OUT check` fails when a case is more than 10 % over its line here.
 rest 213
-held1 49401
-held4 49425
-held8 94633
-held16 178946
-held8-L1 88569
-pattern 58683
-hosted-rest 780
-hosted-held8 96987
-hosted-pattern 60193
+held1 49906
+held4 49930
+held8 95130
+held16 179427
+held8-L1 89066
+pattern 59188
+hosted-rest 779
+hosted-held8 97481
+hosted-pattern 60695
