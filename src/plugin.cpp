@@ -209,6 +209,20 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         const uint32_t cap = instanceLimit();
         while (cap && d.keeping() + 1 > cap && giveUp(d, victim(d, c.id))) {}
     }
+    // Whether every sound and the instance keep at most their limits (Described::keeping's count, without the core's levels).
+    bool withinLimits() const {
+        std::array<uint32_t, kContexts> n{};
+        uint32_t all = 0;
+        for (const auto& v : voices) if (v.active && !v.chokeLength) ++n[v.context], ++all;
+        const uint32_t cap = instanceLimit();
+        if (cap && all > cap) return false;
+        for (uint32_t slot = 0; slot < kContexts; ++slot)
+            if (n[slot] && contexts[slot].users.load(std::memory_order_acquire)) {
+                const auto own = soundLimits(contexts[slot]);
+                if (own.limit && n[slot] > own.limit) return false;
+            }
+        return true;
+    }
     // At a block's start: owed NOTE_ENDs, then voices past a limit set_limits lowered fade out.
     void keepWithinLimits() {
         for (uint32_t i = 0; i < owedCount; ++i) {
@@ -217,6 +231,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         }
         owedCount = 0;
         if (selected[0] != shownSlot) selectedGlobally(contexts[selected[0]], output);  // channel 0 was given another sound
+        if (withinLimits()) return;  // the common block: nothing to give up, so no description of every voice
         Described d; describe(d, kVoices);
         for (uint32_t slot = 0; slot < kContexts; ++slot) {
             const auto& c = contexts[slot];
