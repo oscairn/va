@@ -763,6 +763,17 @@ static void testBoxDestinations() {
     CHECK(e > 0 && d < 1e-10 * e);
 }
 
+// Ageing (va-round7 X1, G2): at drift 0 it moves nothing over 0.12 dB or 0.01 cent from 0 to 200; at drift 64 the drift's statistics at
+// 154 and 200 are those at 100 (12 voices each). Covered there; under 100 with drift, and with drift over 64, reported.
+static void testAgeing() {
+    Gap g[64]; Patch q; q.set(Ageing, 154);
+    CHECK(notCovered(q, g, 64) == 0);  // drift 64, the model's default
+    q.set(Ageing, 30);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == Ageing);
+    q.set(VoltageDrift, 0);
+    CHECK(notCovered(q, g, 64) == 0);
+}
+
 // Aftertouch as a box source (va-round7 A3P: channel pressure through a +32 cutoff box sounds as the mod wheel at 0, 16, 32, 48, 64, 96
 // and 127 within 0.000 dB on harmonics 1-8: the 7-bit map): covered.
 static void testPressureSource() {
@@ -858,7 +869,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

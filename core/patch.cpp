@@ -209,7 +209,8 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
     g.need(q, Unison, 0, 0, "unison: out of scope");
     g.need(q, OSCReset, 0, 0, "oscillator reset modes: not built (free running only)");
     g.need(q, VoltageDrift, 0, 64, "voltage drift over 64: measured at 127 only from 3 voices (+11 cents, +4.4 semitones of cutoff), not built");
-    g.need(q, Ageing, 100, 100, "ageing: not built");
+    // ageing (va-round7 X1 / G2): no effect found from 0 to 200 at drift 0, nor from 100 to 200 at drift 64 (12 voices each)
+    if (q[Ageing] != 100 && q[VoltageDrift] && (q[Ageing] < 100 || q[VoltageDrift] > 64)) g.add(Ageing, "ageing: measured at drift 0, and from 100 to 200 at drift 64 (no effect)");
     g.need(q, NoiseGeneratorOutLevel, 0, 0, "noise: out of scope");
     // oscillators
     for (int n = 0; n < 3; ++n) {
