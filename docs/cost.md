@@ -33,6 +33,34 @@ limit count, the voice description, `notes`) visit only the active voices (a 64-
 core's `voice()` is asked only for those; the core lists the sounds with voices once a render call instead of testing all 8 at
 every control step, reaps only a sound with a voice releasing or fading, and advances the ages once a call.
 
+## Code layout (a build-time choice)
+
+`VA_KERNEL_LAYOUT` (CMake; `VC_LAYOUT` in `core/core.cpp`, `VA_FLAGS=-DVC_LAYOUT=n` for `cg.sh`): **0** (the default) every
+kernel calls the shared control step and filters; **1** the hot kernels (saw-table oscillators 1-2, an optional oscillator 3, a
+low-pass filter 1: the plans of 43 of the 45 analog parts surveyed, by `describe()`) inline the control step and the filters'
+control, and run filter 1's LPF24 and filter 2's HPF24 inline (other types call the shared filter); **2** every kernel inlines
+everything (round 5's layout before the code size change). The output is bit-identical in the three (the bench's hash on aarch64;
+a render compared byte for byte on macOS arm64). Round 6, aarch64, per voice at 8 held voices, and `core.cpp` text:
+
+| plan (8 held) | layout 0 | layout 1 | layout 2 |
+|---|---|---|---|
+| probe A (saw + pulse 0.5, LPF24, HPF24) | 11.8k | **10.4k** | 10.4k |
+| probe A, filter 2 left out (plan 14) | 9.1k | 8.2k | 8.2k |
+| saw + LPF24 (plan 3, with filter 2's HPF24) | 10.0k | 8.6k | 8.7k |
+| a third oscillator (plan 10) | 13.9k | 12.5k | 12.5k |
+| saw + LPF18 (plan 12) | 6.6k | 6.2k | 6.0k |
+| not hot: saw + pulse (plan 2), pulse width LFO (plan 11) | 6.3k, 13.8k | 6.3k, 13.8k | 5.9k, 12.3k |
+| hosted, 8 held (probe A) | 96,875 a block | 85,203 | 85,243 |
+| `core.cpp` text (g++ 13.3, -O3, cortex-a53) | **250 KB** | **381 KB** | 1.86 MB |
+
+Where the 12.1k a voice of 0.6.0 went against the 6.9k of the core timed at commit 2549b96: about 3.2k is round 5's filter work
+(filter 2 built: its HPF24 2.2k in probe A; the low-pass's two sections, each with its poles mapped to 48 kHz at every control
+step, 1.0k more than the TPT pair), and 1.45k is the out-of-line structure (layout 0 against 2: calls per lane and step, the
+ramps' state stored and reloaded across the calls, the filter type's switch). Layout 1 recovers all of the latter for the hot plans
+at 381 KB, but not the 8.5k a voice asked for: probe A stays at 10.4k because of its filters. The default stays layout 0 until
+the device timing decides. One lane at a time is now cheaper than two interleaved in layout 0 (88,569 against 94,633 a block;
+layout 2: 81,913 against 82,889): the interleaved filter loop of two lanes no longer pays in instructions.
+
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
 
 **Round 6** (the trims above): rest 213, 1 held 49,401, 4 held 49,425, 8 held 94,633 (**11.8k a voice**), 16 held 178,946, 8

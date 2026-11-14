@@ -11,6 +11,11 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # The DSP core: a plain C++ library with no plugin API, OS, threads, files or heap (core/vcore.h).
 add_library(vcore STATIC core/core.cpp core/laws.cpp core/patch.cpp)
 target_include_directories(vcore PUBLIC core)
+# The kernels' code layout (core/core.cpp VC_LAYOUT, docs/cost.md): 0 shared control step and filters (smallest code, the
+# default), 1 the hot plans inlined, 2 everything inlined.
+set(VA_KERNEL_LAYOUT 0 CACHE STRING "Kernel code layout: 0 shared, 1 hot plans inlined, 2 all inlined")
+set_property(CACHE VA_KERNEL_LAYOUT PROPERTY STRINGS 0 1 2)
+target_compile_definitions(vcore PRIVATE VC_LAYOUT=${VA_KERNEL_LAYOUT})
 if(MSVC)
     target_compile_options(vcore PRIVATE /W4)
 else()

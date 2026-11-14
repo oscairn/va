@@ -8,12 +8,12 @@
 # (exit 1) when a case's mean is more than 10 % over tools/cost/baseline.txt, or the shell's hosted gate fails.
 set -e
 SRC=$1; OUT=$2; MODE=$3
-F="-std=c++17 -O3 -DNDEBUG -mcpu=cortex-a53"
+F="-std=c++17 -O3 -DNDEBUG -mcpu=cortex-a53 $VA_FLAGS"  # VA_FLAGS: e.g. -DVC_LAYOUT=1 (the kernels' code layout)
 mkdir -p "$OUT/runs"
 g++ $F "$SRC/core/core.cpp" "$SRC/core/laws.cpp" "$SRC/core/patch.cpp" "$SRC/tools/vcbench.cpp" -o "$OUT/vcbench"
-# the plugin as a host loads it (VA_FLAGS: extra compile flags), and the hosted driver (the shell's cost: hosted-* cases)
+# the plugin as a host loads it, and the hosted driver (the shell's cost: hosted-* cases)
 I="-I$SRC/third_party/clap/include -I$SRC/third_party/oscairn-clap/include"
-g++ $F $VA_FLAGS -shared -fPIC -fvisibility=hidden $I "$SRC/src/plugin.cpp" "$SRC/src/core_engine.cpp" "$SRC/core/core.cpp" "$SRC/core/laws.cpp" "$SRC/core/patch.cpp" -o "$OUT/va.clap"
+g++ $F -shared -fPIC -fvisibility=hidden $I "$SRC/src/plugin.cpp" "$SRC/src/core_engine.cpp" "$SRC/core/core.cpp" "$SRC/core/laws.cpp" "$SRC/core/patch.cpp" -o "$OUT/va.clap"
 g++ $F $I "$SRC/tools/hostbench.cpp" -o "$OUT/hostbench" -ldl
 run() {  # name args...
   n=$1; shift; d="$OUT/runs/$n"; rm -rf "$d"; mkdir -p "$d"
@@ -40,6 +40,7 @@ run hosted-pattern pattern 2 2
 if [ -d "$SRC/tools/cost/plans" ] && [ "$MODE" != check ]; then
   for p in "$SRC"/tools/cost/plans/*.patch; do VC_PATCH="$p" run "plan-$(basename "$p" .patch)" held 8 0.5 0.5; done
 fi
+g++ $F -c "$SRC/core/core.cpp" -o "$OUT/core.o" && echo "core.cpp text $(size "$OUT/core.o" | awk 'NR==2 {print $1}') bytes"
 } | tee "$OUT/summary.txt"
 if [ "$MODE" = check ]; then
   fail=0

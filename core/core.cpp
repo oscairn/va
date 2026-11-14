@@ -139,9 +139,10 @@ VC_INLINE void filterRun(const Lane* l, int S, int n, vf (*buf)[kSub]) {
     VC_N({ l[m].set(S, s1[m]); l[m].set(S + 1, s2[m]); l[m].set(S + 2, s3[m]); l[m].set(S + 3, s4[m]);
            l[m].set(S + 4, F[m]); l[m].set(S + 6, qa[m]); l[m].set(S + 8, qb[m]); l[m].set(S + 10, Fb[m]); });
 }
-// Shared by every plan's kernel (not inlined into each: the code stays small; one call a control step).
+// Shared by every plan's kernel (not inlined into each: the code stays small; one call a control step); filterSwitch is its body,
+// inlined into the kernels the layout makes hot (VC_LAYOUT below).
 template <int N>
-VC_NOINLINE void filterStage(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) {
+VC_INLINE void filterSwitch(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) {
     switch (type) {  // once a control step: the loops have no branch
     case 1: filterRun<N, SLow, SLow>(l, S, n, buf); break;
     case 2: filterRun<N, SLow, OLow>(l, S, n, buf); break;
@@ -154,6 +155,8 @@ VC_NOINLINE void filterStage(int type, const Lane* l, int S, int n, vf (*buf)[kS
     default: break;
     }
 }
+template <int N>
+VC_NOINLINE void filterStage(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) { filterSwitch<N>(type, l, S, n, buf); }
 
 // asin(x), 0 <= x <= 1: its series under 0.5 (relative 1e-4 there), pi/2 - acos above. Control rate.
 VC_INLINE vf asinv(vf x) {
@@ -252,7 +255,7 @@ VC_INLINE vf lfoStep(const Lane& l, const Lfo& o, int n, int LP, int LR, vf t, v
 // Ft = 2 sin(pi fc / 44100), the damping q = 2^(1 - r / 32) of the resonance r, F = Ft (1 - min(q, 1) Ft / 4), q at most 3 - 2F,
 // the one-pole's c = 1 - e^(-2 pi fc / 44100)), mapped to the prepared rate, ramped over the step. Returns the filter's output
 // gain (the resonance's pass-band gain, the high-pass sections' gain), which the amplitude applies.
-VC_NOINLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f, vf eg, vf lfo, vm fresh, vf rn) {
+VC_INLINE vf filterControlBody(const Lane& l, const Sound& s, const Ctl& c, int f, vf eg, vf lfo, vm fresh, vf rn) {
     const int S = f ? H1 : L1, type = s.flt[f].type;
     const FilterKind k = kKinds[type];
     const LawTables& t = lawTables();
@@ -285,10 +288,15 @@ VC_NOINLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f,
     }
     return g;
 }
+VC_NOINLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f, vf eg, vf lfo, vm fresh, vf rn) {
+    return filterControlBody(l, s, c, f, eg, lfo, fresh, rn);
+}
 
 // ---- control step for one lane ------------------------------------------------------------------
-template <bool LP, bool HP, bool O3>
-VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) {  // one call a lane a step: shared by the lane variants
+// Hot: inlined into its kernel with the filters' control (the layout's hot kernels); else one call a lane a step, shared by the
+// lane variants.
+template <bool LP, bool HP, bool O3, bool Hot>
+VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     const vm fresh = splat(0.5f) < l(FRESH);
     const vf rn = splat(c.rn);
     envStep(l, AENV, ASTG, AEND, ALOW, c.ka, c.kd, c.kr, c.krl, s.amp.sustain);
@@ -349,8 +357,8 @@ VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) {  // one 
         level(l, TA3, TB3, TW3, DTW3, lg3, s.tabU, s.stride[2], fresh, rn);
     }
     vf fg = splat(1.f);  // the filters' output gains
-    if constexpr (LP) fg = filterControl(l, s, c, 0, l(FENV), lcut, fresh, rn);
-    if constexpr (HP) fg = fg * filterControl(l, s, c, 1, l(FENV), splat(0.f), fresh, rn);
+    if constexpr (LP) fg = Hot ? filterControlBody(l, s, c, 0, l(FENV), lcut, fresh, rn) : filterControl(l, s, c, 0, l(FENV), lcut, fresh, rn);
+    if constexpr (HP) fg = fg * (Hot ? filterControlBody(l, s, c, 1, l(FENV), splat(0.f), fresh, rn) : filterControl(l, s, c, 1, l(FENV), splat(0.f), fresh, rn));
     // amplitude: EG x volume x fade x the sound's level and gain, equal-power pan
     vf fade = vmax(l(FADE) - l(DFADE) * splat(float(c.n)), splat(0.f));
     l.set(FADE, fade);
@@ -360,6 +368,8 @@ VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) {  // one 
     l.ramp(GR, DGR, g * splat(s.panR), vm{}, rn);
     l.set(FRESH, splat(0.f));
 }
+template <bool LP, bool HP, bool O3>
+VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) { controlBody<LP, HP, O3, false>(l, s, c); }
 
 VC_INLINE void amp(const Lane& l, const vf* buf, int n, vf* accL, vf* accR) {
     vf gl = l(GL), dgl = l(DGL), gr = l(GR), dgr = l(DGR);
@@ -375,18 +385,33 @@ VC_INLINE void amp(const Lane& l, const vf* buf, int n, vf* accL, vf* accR) {
 struct Kernel { void (*run)(Pool&, const Sound&, const Ctl&, vf*, vf*, int interleave); };
 
 namespace {
+// The code layout, a build-time choice (CMake VA_KERNEL_LAYOUT; docs/cost.md): 0 every kernel calls the shared control step and
+// filters (the smallest code), 1 the hot kernels (saw oscillators 1-2, optional oscillator 3, low-pass filter 1: the plans of most
+// of the parts measured) inline them, their filters' usual types (filter 1 LPF24, filter 2 HPF24) included, 2 every kernel
+// inlines everything (the largest code).
+#ifndef VC_LAYOUT
+#define VC_LAYOUT 0
+#endif
+template <int N, int T>
+VC_INLINE void filterHot(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) {
+    if constexpr (VC_LAYOUT == 2) filterSwitch<N>(type, l, S, n, buf);
+    else if (type == T) filterRun<N, kKinds[T].a, kKinds[T].b>(l, S, n, buf);
+    else filterStage<N>(type, l, S, n, buf);
+}
 template <Wave O1, Wave O2, Wave O3, bool LP, bool HP>
 struct Plan {
+    static constexpr bool kHot = VC_LAYOUT == 2 || (VC_LAYOUT == 1 && O1 == Wave::Saw && O2 != Wave::Pulse && LP);
     template <int N>
     static VC_INLINE void lanes(Pool& p, const Sound& s, const Ctl& c, int j, vf* aL, vf* aR) {
         Lane l[N]; vf buf[N][kSub];
         for (int m = 0; m < N; ++m) {
             l[m] = Lane{&p, (j + m) * W};
-            control<LP, HP, O3 != Wave::Off>(l[m], s, c);
+            if constexpr (kHot) controlBody<LP, HP, O3 != Wave::Off, true>(l[m], s, c);
+            else control<LP, HP, O3 != Wave::Off>(l[m], s, c);
             oscillators<O1, O2, O3>(l[m], s, c, c.n, buf[m]);
         }
-        if constexpr (LP) filterStage<N>(s.flt[0].type, l, L1, c.n, buf);
-        if constexpr (HP) filterStage<N>(s.flt[1].type, l, H1, c.n, buf);
+        if constexpr (LP) { if constexpr (kHot) filterHot<N, 1>(s.flt[0].type, l, L1, c.n, buf); else filterStage<N>(s.flt[0].type, l, L1, c.n, buf); }
+        if constexpr (HP) { if constexpr (kHot) filterHot<N, 5>(s.flt[1].type, l, H1, c.n, buf); else filterStage<N>(s.flt[1].type, l, H1, c.n, buf); }
         for (int m = 0; m < N; ++m) amp(l[m], buf[m], c.n, aL, aR);
     }
     static void run(Pool& p, const Sound& s, const Ctl& c, vf* aL, vf* aR, int interleave) {
