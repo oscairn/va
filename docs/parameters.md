@@ -90,7 +90,8 @@ in the reference (its foot controllers are CC 11 and, for the second, a control 
 CC 121 (reset all controllers) puts the channel's sources at their rest values: the foot controllers and breath at the
 top, the others at 0, the bend centred (the reference's reset; the rest values themselves are taken from its documentation,
 not measured). Foot controller 2 and the foot switch are parameters 38 and 39 (a host passes neither's MIDI controller; va-round6 A1: the reference
-rests at the top and at 0 for them, as a box on the cutoff showed, and took neither CC 95 / 96 nor CC 88 in that probe, so their value
+rests at the top and at 0 for them, as a box on the cutoff showed, and took neither CC 95 / 96 nor CC 88 in that probe; va-round7 A3: no controller number from 2 to 119 moved either through a cutoff box, CC 0, 1, 6, 7,
+10, 11, 32, 38, 64-67 and 96-101 left out, and 72-75 not told apart from their own effect on the sound; so their value
 map is not measured and a box reading them is reported). The sequenced sources and the envelope-following sources are not built. In the reference CC 11 is also expression (the part's volume); the shell does not
 apply expression.
 
