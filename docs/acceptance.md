@@ -110,7 +110,8 @@ knob 1 to the part's knob 1) are ruled out: probe A with them switched off sound
 
 Cross-build tolerance: the same render on every target within 2e-4 of the stored statistics (every
 100 ms window's RMS; `tests/core`). Measured: Linux arm64 3.6e-8, macOS x86_64 SSE2 (Rosetta) 1.7e-5,
-scalar 2.3e-9, against the macOS arm64 values.
+scalar 2.3e-9, against the macOS arm64 values. Round 5 (commit a13b424, the statistics re-baselined on macOS arm64): Linux arm64
+8.1e-8, SSE2 (Rosetta) 1.9e-5, scalar 2.5e-9.
 
 | quantity | key | reference (median or mean, range) | engine | difference | tolerance | result |
 |---|---|---|---|---|---|---|
