@@ -316,12 +316,15 @@ void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, c
     }
     for (int t = 0; t < s.targets; ++t) total[s.target[t].dest] += out[s.target[t].box];
     if (mod) for (int d = 0; d < kDests; ++d) total[d] += mod[d];
-    for (int d = 0; d < kDests; ++d) {
+    for (int d = 0; d < DWave1; ++d) {
         const float tt = total[d] < -8192.f ? -8192.f : total[d] > 8192.f ? 8192.f : total[d];
-        const float x = tt * float(kDestDefs[d].span) * (1.f / 8192);
-        // toward zero, as the reference; the wave rounded half away from zero (va-round7 A2: +-1024 of a box moves it a step)
-        int v = stored[d] + int(d < DWave1 ? x : x + (x < 0 ? -0.5f : 0.5f));
+        int v = stored[d] + int(tt * float(kDestDefs[d].span) * (1.f / 8192));  // toward zero, as the reference
         raw[d] = int16_t(v < kDestDefs[d].lo ? kDestDefs[d].lo : v > kDestDefs[d].hi ? kDestDefs[d].hi : v);
+    }
+    for (int d = DWave1; d <= DWave3; ++d) {  // the wave rounded half away from zero (va-round7 A2: +-1024 of a box moves it a step)
+        const float tt = total[d] < -8192.f ? -8192.f : total[d] > 8192.f ? 8192.f : total[d], x = tt * (4.f / 8192);
+        const int v = stored[d] + int(x + (x < 0 ? -0.5f : 0.5f));
+        raw[d] = int16_t(v < 0 ? 0 : v > 4 ? 4 : v);
     }
 }
 
