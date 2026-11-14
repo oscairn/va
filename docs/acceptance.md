@@ -206,3 +206,5 @@ engine on a pulse of width 0.5, both pitch-tracked; `analysis/boxR1.py`, `analys
 | a filter EG depth box past 448 | sounds as the static 448 (0.00 dB at three wheel values) | stops at 448 | exact | pass |
 | a box on the filter EG decay | sounds as the static decay it lands on (within 0.26 dB, eight values) | the decay law at that value | | pass |
 | switch 1 at CC 65 | as CC 64 (2.3 cents under the law's 65) | the law (65) | | unexplained, one point |
+| round 5 (va-round5 C1): the wheel at 16-96 through a +32 box on cutoff 400 (LPF12) | the static cutoff of the 7-bit map 8 v / 512 + (v - 64) 512 / 63 within 1e-5 of F at 11 values (104-127: both maps agree) | the same map; wheel 64 and 96 against static 655 and 785: 0.0 relative difference (tests/core) | exact | pass |
+| round 5 C1: three +1 boxes from the wheel at 127 on cutoff 600 | the static 647 (645 truncated per box, 646 neither) | 647 | exact | pass |

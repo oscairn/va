@@ -9,8 +9,8 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 | 1 | Pan | `pan` | -1..1 | 0 | equal-power pan |
 | 2 | Polyphony Limit | `polyphony` | 1..64, stepped | 64 | the most voices the sound keeps |
 | 3-10 | Knob 1-8 | `knob1`..`knob8` | 0..1 | the patch's own value (raw `PartAssignableKnobNValue` / 1023; model default 512) | the part's knob N, live |
-| 11 | Ribbon | `ribbon` | 0..1 | 0 | the ribbon as a controller box source (source 6), live; the box sees round(value x 1023) |
-| 12, 13 | Switch 1, Switch 2 | `switch1`, `switch2` | 0 or 1, stepped | 0 | switches 1-2 as box sources (16, 17): 0 or 1023 |
+| 11 | Ribbon | `ribbon` | 0..1 | 0 | the ribbon as a controller box source (source 6), live; the box sees v = round(value x 127) through the 7-bit map (below) |
+| 12, 13 | Switch 1, Switch 2 | `switch1`, `switch2` | 0 or 1, stepped | 0 | switches 1-2 as box sources (16, 17): 0 or 1024 |
 | 14-30 | the controller box destinations | none (the raw patch's own parameters) | the raw parameter's range | the model's default; shows the sound's own value | below; modulatable |
 
 The knobs, the ribbon and the switches are what the reference's controller boxes read (box sources 8-15 = knobs 1-8). A change takes
@@ -69,7 +69,7 @@ channel of its latest note; the core keeps them per channel):
 | reference source | MIDI | value the box sees (0..1023) |
 |---|---|---|
 | 0 pitch bend | pitch bend | the 14-bit value / 16 |
-| 1 mod wheel | CC 1 | round(value x 1023 / 127) |
+| 1 mod wheel | CC 1 | 8 v up to v = 64, then 512 + (v - 64) x 512 / 63 (127: 1024) |
 | 2 aftertouch | channel pressure, or the pressure note expression (the channel's latest) | as a CC (its map is not measured: reported as not covered) |
 | 3 foot controller 1 | CC 11 | as CC 1 |
 | 7 breath | CC 2 | as CC 1 |
@@ -83,10 +83,18 @@ not measured). Foot controller 2 (the reference drives a Performance-level macro
 sources and the envelope-following sources are not built. In the reference CC 11 is also expression (the part's volume); the shell does not
 apply expression.
 
+The 7-bit map (va-round5 C1): the mod wheel through a +32 box on the cutoff (LPF12, the section's F read exactly) lands on the
+static cutoff this map predicts at 11 values from 16 to 96 within 1e-5 of F, where round(v x 1023 / 127) predicts 1-2 raw steps
+more and misses by 0.4-1.9 % (the earlier "within 0.3 cent" check through the pitch LFO's depth could not tell the two apart). The
+14-bit bend / 16 is not re-measured.
+
 The box law (va-round3 R1, `docs/coverage.md`): a box's output is (c + o - 1024) x ratio / 8 within +-8192, c its curve at
 the source's value, o 1024 unipolar or 512 bipolar, ratio the raw value - 128 (raw 255: +128); a destination's outputs are
 summed and the sum clamped to +-8192; the destination's raw value moves by the sum x span / 8192 steps, toward zero, and
-stays within its range. A box reaches an oscillator's or filter 1's destination only where that unit's switch for the box
+stays within its range. The truncation comes once, after the sum (va-round5 C1: three +1 boxes from the wheel at 127 on cutoff 600,
+15.98 steps each, sound as the static 647 within 1e-5 of F; truncating each box first would give 645). This differs from what the
+sample engine's round measured on the reference's sample-based parts (each box truncated before the sum): on the analog model it is
+the sum. A box reaches an oscillator's or filter 1's destination only where that unit's switch for the box
 is on (destinations 142, 143 and 145 move filter 1 and filter 2, each where its switch for the box is on; filter 2's are ids
 28-30).
 

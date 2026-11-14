@@ -457,9 +457,16 @@ void Core::install(uint32_t i, const Sound& in) {
     live_[i] = m;
 }
 
+// A 7-bit controller value v (0..127) as a box source (va-round5 C1: the mod wheel through a cutoff box lands on the static cutoff of
+// this map at 11 values within 1e-5 of F, where round(v x 1023 / 127) misses by 0.4-1.9 %): 8 v up to 64, then 512 + (v - 64) 512 / 63.
+static float sevenBit(float x) {
+    const int v = int((x < 0 ? 0.f : x > 1 ? 1.f : x) * 127.f + 0.5f);
+    return v <= 64 ? float(8 * v) : 512.f + float(v - 64) * (512.f / 63);
+}
+
 void Core::setPanel(uint32_t i, int source, float x) {
     const int k = source == 6 ? 0 : source == 16 ? 1 : source == 17 ? 2 : -1;
-    if (i < kMaxSounds && k >= 0) panel_[i][k] = float(int((x < 0 ? 0.f : x > 1 ? 1.f : x) * 1023.f + 0.5f));
+    if (i < kMaxSounds && k >= 0) panel_[i][k] = sevenBit(x);
 }
 
 void Core::setDestination(uint32_t i, int d, int v) {
@@ -665,7 +672,7 @@ void Core::setPitchBend(int ch, float x) {
 }
 void Core::setController(int ch, int source, float x) {
     if (ch < 0 || ch >= 16 || source <= 0 || source >= kSources || source == 6 || source >= 8) return;  // knobs, ribbon, switches: the sound's
-    src_[ch][source] = float(int((x < 0 ? 0.f : x > 1 ? 1.f : x) * 1023.f + 0.5f));  // a 7-bit controller: value x 1023 / 127, rounded (R1 C_*)
+    src_[ch][source] = sevenBit(x);
 }
 
 void Core::reset() {
@@ -680,7 +687,7 @@ void Core::resetControllers(int ch) {
     float* c = src_[ch];
     for (int i = 0; i < kSources; ++i) c[i] = 0;
     c[0] = float(int((bend_[ch] + 1) * 512.f)); if (c[0] > 1023.f) c[0] = 1023.f;
-    c[3] = c[4] = c[7] = 1023;  // foot controllers and breath rest at the top (the reference's reset all controllers)
+    c[3] = c[4] = c[7] = 1024;  // foot controllers and breath rest at the top (the reference's reset all controllers)
 }
 
 // a voice is done when its release reached exactly zero, or its fade ended

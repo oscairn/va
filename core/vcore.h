@@ -106,7 +106,8 @@ public:
     // A sound's knob k (0..7) now, 0..1 (raw 0..1023): the controller boxes it drives follow at the
     // next control step. install() starts a sound at its patch's own knob values.
     void setKnob(uint32_t sound, int k, float value);
-    // A sound's ribbon (source 6) or switch 1-2 (sources 16-17) now, 0..1 (as a 7-bit controller: value x 1023, rounded);
+    // A sound's ribbon (source 6) or switch 1-2 (sources 16-17) now, 0..1 (as a 7-bit controller: v = value x 127, then the map of
+    // setController);
     // other sources are ignored. They rest at 0; install() keeps them.
     void setPanel(uint32_t sound, int source, float value);
     // A controller box destination of a sound (vcore::Dest) moved from outside the boxes: setDestination sets its value

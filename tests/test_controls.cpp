@@ -59,14 +59,14 @@ TEST(param_mod_on_a_destination_equals_the_linear_box) {
 }
 
 // Every live source the host passes, at the same 7-bit value, drives its box as the mod wheel does: breath (CC 2), pitch bend
-// (8192 + 64: the box sees 516, as CC value 64), pressure (64 / 127), and the ribbon and switch parameters. The ribbon's and the
+// (8192: the box sees 8192 / 16 = 512, as CC value 64 through the 7-bit map), pressure (64 / 127), and the ribbon and switch parameters. The ribbon's and the
 // switches' CCs (16, 86, 87) never reach a plugin in the host and move nothing.
 TEST(sources_drive_their_boxes) {
     const auto wheel = play(kBase + box(1), {midi(0, 0xB0, 1, 64)});
     const auto none = play(kBase + box(1), {});
     CHECK(rmsDiff(wheel, none) > 0.05);
     const struct { const char* what; int source; std::vector<Bytes> ev; } cases[] = {
-        {"breath", 7, {midi(0, 0xB0, 2, 64)}}, {"pitch bend", 0, {midi(0, 0xE0, 64, 64)}}, {"pressure", 2, {pressure(0, 0, -1, 64 / 127.0)}},
+        {"breath", 7, {midi(0, 0xB0, 2, 64)}}, {"pitch bend", 0, {midi(0, 0xE0, 0, 64)}}, {"pressure", 2, {pressure(0, 0, -1, 64 / 127.0)}},
         {"channel pressure", 2, {midi(0, 0xD0, 64, 0)}}, {"ribbon", 6, {param(0, 11, 64 / 127.0)}}};
     for (const auto& c : cases) {
         const double d = rmsDiff(play(kBase + box(c.source), c.ev), wheel);

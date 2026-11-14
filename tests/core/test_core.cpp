@@ -450,6 +450,32 @@ static void testBoxLaw() {
     const double lo = bright(0), hi = bright(1);
     std::printf("mod wheel on the cutoff: high-passed energy x%.0f at full\n", hi / lo);
     CHECK(hi > 10 * lo);
+    // va-round5 C1: the mod wheel through a +32 box on cutoff 400 sounds as the static cutoff of the 7-bit map 8 v (v <= 64), then
+    // 512 + (v - 64) 512 / 63: at 64 the static 655 (round(64 x 1023 / 127) = 516 would give 657, 1 % off in F), at 96 the static 785
+    auto render = [&](const char* extra, float wheel) {
+        std::string t = std::string("vcore-patch/1 Filter1FilterType=3 Filter1FilterResonance=0 Filter2FilterType=0 Osc2OscillatorOutLevel=0 "
+                                    "Osc3OscillatorOutLevel=0 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 ") + extra;
+        Patch q; readPatch(t.c_str(), q, e, sizeof e);
+        auto c = std::make_unique<Core>(); c->prepare(44100); c->load(0, q); c->setGain(0, 1, 0); c->setController(0, 1, wheel);
+        std::vector<float> a(8820), b(8820);
+        c->noteOn(0, 0, 0, 48, 1.f); c->render(a.data(), b.data(), 8820);
+        return a;
+    };
+    const char* kWheelBox = "Filter1FilterCutoff=400 Box1ControllerSetSwitch=1 Box1ControllerSetSource=1 Box1ControllerSetDestination=142 Box1ControllerSetRatio=160 ";
+    for (const auto& w : {std::make_pair(64, "Filter1FilterCutoff=655"), std::make_pair(96, "Filter1FilterCutoff=785")}) {
+        const auto a = render(kWheelBox, float(w.first) / 127), b = render(w.second, 0);
+        double d = 0, n = 0; for (size_t i = 4410; i < a.size(); ++i) { d += double(a[i] - b[i]) * (a[i] - b[i]); n += double(b[i]) * b[i]; }
+        std::printf("mod wheel %d through the box against %s: %.1e relative\n", w.first, w.second, std::sqrt(d / n));
+        CHECK(std::sqrt(d / n) < 1e-4);
+    }
+    // C1: three +1 boxes from the wheel at 127 on cutoff 600 sound as the static 647: the boxes are summed, then truncated once (15.98
+    // steps each; truncating each first would give 645)
+    readPatch("vcore-patch/1 Filter1FilterCutoff=600 Box1ControllerSetSwitch=1 Box1ControllerSetSource=1 Box1ControllerSetDestination=142 Box1ControllerSetRatio=129 "
+              "Box2ControllerSetSwitch=1 Box2ControllerSetSource=1 Box2ControllerSetDestination=142 Box2ControllerSetRatio=129 "
+              "Box3ControllerSetSwitch=1 Box3ControllerSetSource=1 Box3ControllerSetDestination=142 Box3ControllerSetRatio=129", p, e, sizeof e);
+    core->compile(s, p);
+    src[1] = 1024; boxRaw(s, src, knob, raw);
+    CHECK(raw[DCutoff] == 647);
 }
 
 // The filter EG depth: a true zero at 256 (the earlier law put 1.4 semitones there), 0.5 semitone of the cutoff a step.

@@ -266,7 +266,8 @@ const LawTables& lawTables() { static const bool built = buildLaws(); (void)buil
 // Curves (the box's curve bank 0): 0 the linear one (Standard, parameter 5: c = s, 1024 at 1023); the others measured at
 // 17 source values (va-round3 R1 V_*: the mod wheel at 0, 8, ..., 120, 127 through a box on the pitch LFO's depth, c read
 // back to +-5 of 1024), linear between: kCurveKnots.
-const float kCurveS[17] = {0, 64, 129, 193, 258, 322, 387, 451, 516, 580, 644, 709, 773, 838, 902, 966, 1023};
+// (the mod wheel at 0, 8, ..., 120, 127 through the 7-bit map, va-round5 C1: 8 v up to 64, then 512 + (v - 64) 512 / 63)
+const float kCurveS[17] = {0, 64, 128, 192, 256, 320, 384, 448, 512, 577.0159f, 642.0317f, 707.0476f, 772.0635f, 837.0794f, 902.0952f, 967.1111f, 1024};
 const CurveDef kCurves[kCurveCount] = {
     {0, 5, 0, {}},
     {0, 6, 0, {0, 33, 71, 118, 156, 204, 261, 308, 365, 431, 497, 573, 649, 734, 829, 924, 1024}},
