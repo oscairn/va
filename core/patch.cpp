@@ -294,7 +294,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
     // envelopes
     const int t1 = q[Filter1FilterType] || q[Filter2FilterType];
     if (t1 && (r.lo[DFegDecay] < 100 || r.hi[DFegDecay] > 255)) g.add(FilterCutoffEGDecayTime, "decay (with its boxes): law measured 100-255");
-    if (t1 && r.lo[DFegRelease] < 128) g.add(FilterCutoffEGReleaseTime, "release (with its boxes): law measured 128-255");
+    if (t1 && r.lo[DFegRelease] < 55) g.add(FilterCutoffEGReleaseTime, "release (with its boxes): law measured 55-255");
     g.need(q, FilterCutoffEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
     g.need(q, AmplitudeLevel, 56, 511, "amplitude level: law measured 56-511");
     g.need(q, AmplitudeLevelVelocitySensitivity, 256, 256, "velocity sensitivity: measured only at 0 (no effect)");
@@ -325,7 +325,6 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
     g.need(q, AmplitudeLevelKeyFollow, 0, 0, "amplitude key follow: no measured law");
     if (satIndex(q[AmplitudeSaturatorDrive]) < 0) g.add(AmplitudeSaturatorDrive, "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
     if (r.lo[DAmpDecay] < 100) g.add(AmplitudeEGDecayTime, "decay (with its boxes): law measured 100-255");
-    if (r.lo[DAmpRelease] < 64) g.add(AmplitudeEGReleaseTime, "release (with its boxes): law measured 64-255");
     g.need(q, AmplitudeEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
     // part
     if (q[PortamentoMaster] && q[PartPortamentoSwitch]) {

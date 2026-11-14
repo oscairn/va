@@ -285,11 +285,20 @@ constexpr Law kFegTime{kFegTimeX, kFegTimeY, 21, 144, 255};
 constexpr float kFegDecayLowX[] = {100, 104, 110, 117, 120, 126, 133, 138, 144};
 constexpr float kFegDecayLowY[] = {0.01440f, 0.01669f, 0.02399f, 0.02991f, 0.03414f, 0.04691f, 0.05998f, 0.07421f, 0.09438556f};
 double fegDecayTau(int raw) { return raw >= 144 ? at(kFegTime, float(raw)) : at(Law{kFegDecayLowX, kFegDecayLowY, 9, 100, 144}, float(raw)); }
-double fegReleaseTau(int raw) { return raw >= 144 ? at(kFegTime, float(raw)) : at(kFegRelease, float(raw)); }
 // Amplitude release under 112 (R2 AR_*: a sine's level slope from -3 to -40 dB, scaled by 1.042 so that 112 reads the
-// generated table's 24.3 ms): 64 / 80 / 96 / 104 -> 4.16 / 6.29 / 12.12 / 17.36 ms; under 64 too fast for the method.
-constexpr float kAmpRelLowX[] = {64, 80, 96, 104, 112}, kAmpRelLowY[] = {0.00416f, 0.00629f, 0.01212f, 0.01736f, 0.02432072f};
-double ampReleaseTau(int raw) { return raw < 112 ? at(Law{kAmpRelLowX, kAmpRelLowY, 5, 64, 112}, float(raw)) : at(kAmpRelease, float(raw)); }
+// generated table's 24.3 ms): 80 / 96 / 104 -> 6.29 / 12.12 / 17.36 ms. Under 80 (va-round8 R2: a 2093 Hz sine's level by its analytic
+// signal at sample resolution, a line from -3 to -40 dB under the hold, 12 notes at each of 0-64): straight lines in dB, the time
+// constant varying from voice to voice (sd 0.4-0.65 ms at ageing 100); the means fitted by tau = 0.652 ms x e^(0.0262 raw) over 0-80,
+// its values at 0 / 16 / 32 / 48 the knots, 64 the mean there (3.77 ms): the engine through the same analysis within 2.6 standard errors
+// of each of the 12 means (the largest at 40 and 56: +20 % and +12 %).
+constexpr float kAmpRelLowX[] = {0, 16, 32, 48, 64, 80, 96, 104, 112};
+constexpr float kAmpRelLowY[] = {0.000652f, 0.000992f, 0.001509f, 0.002294f, 0.00377f, 0.00629f, 0.01212f, 0.01736f, 0.02432072f};
+double ampReleaseTau(int raw) { return raw < 112 ? at(Law{kAmpRelLowX, kAmpRelLowY, 9, 0, 112}, float(raw)) : at(kAmpRelease, float(raw)); }
+// The filter EG's release under 128 is the amplitude's (va-round8 R2 and R: a 2093 Hz sine through LPF24 at 500 with depth 352, its level
+// read as the EG's level through a static depth bank; 55 / 60 / 64 / 70 / 80 (12 notes) / 100 / 128 (4) -> 2.77 / 3.27 / 3.90 / 4.85 /
+// 6.72 / 13.98 / 47.4 ms against the amplitude's law 2.94 / 3.40 / 3.77 / 4.72 / 6.29 / 14.74 / 46.1; under 55 the filter's own response
+// hides the EG, not resolved).
+double fegReleaseTau(int raw) { return raw >= 144 ? at(kFegTime, float(raw)) : raw >= 128 ? at(kFegRelease, float(raw)) : ampReleaseTau(raw); }
 }  // namespace
 
 static LawTables gLaw;

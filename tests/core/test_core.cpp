@@ -513,10 +513,25 @@ static void testTimeLaws() {
         p.set(FilterCutoffEGDecayTime, c.first); core->compile(s, p);
         CHECK(std::fabs(tau(s.feg.ld) / c.second - 1) < 0.002);
     }
+    // short releases (va-round8 R2, 12 voices each, the engine's renders through the same analysis): the amplitude EG's at 16 / 32 / 55 / 64
+    // read 0.97 / 1.53 / 2.82 / 3.77 ms in the reference (each voice +-0.4-0.65 ms), the filter EG's at 55 / 60 / 70 2.77 / 3.27 / 4.85 ms
+    // (the amplitude's law); before, the amplitude's held 64's 4.16 ms under 64 and the filter's 128's 48 ms under 128
+    for (const auto& c : {std::pair<int, double>{16, 0.00097}, {32, 0.00153}, {55, 0.00282}, {64, 0.00377}}) {
+        p.set(AmplitudeEGReleaseTime, c.first); core->compile(s, p);
+        CHECK(std::fabs(tau(s.amp.lr) / c.second - 1) < 0.1);
+    }
+    for (const auto& c : {std::pair<int, double>{55, 0.00277}, {60, 0.00327}, {70, 0.00485}}) {
+        p.set(FilterCutoffEGReleaseTime, c.first); core->compile(s, p);
+        CHECK(std::fabs(tau(s.feg.lr) / c.second - 1) < 0.1);
+    }
     Gap g[64]; Patch q = plain(); q.set(FilterCutoffEGDecayTime, 117);
     CHECK(notCovered(q, g, 64) == 0);
     q.set(FilterCutoffEGDecayTime, 99);
     CHECK(notCovered(q, g, 64) == 1 && g[0].param == FilterCutoffEGDecayTime);
+    q = plain(); q.set(AmplitudeEGReleaseTime, 0); q.set(FilterCutoffEGReleaseTime, 55);
+    CHECK(notCovered(q, g, 64) == 0);
+    q.set(FilterCutoffEGReleaseTime, 54);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == FilterCutoffEGReleaseTime);
 }
 
 // The pitch LFO's depth between the knots 80 and 96 (va-round3 R1: the mod wheel's box landing on 86 and 92 steps):

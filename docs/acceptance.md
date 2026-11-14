@@ -295,3 +295,23 @@ patches and events (`vcbench render`, seeds 1-3 for the takes, 4 for the notes) 
 The cutoff's spread at drift 64 changed from +-0.07 to +-0.51 semitone (uniform; sd 0.30), so probe A's renders (drift 64) changed: its
 stored cross-build statistics were taken again; the probe A acceptance rows above were not re-run with it (the cutoff's mean is
 unchanged, each note's cutoff now scatters by sd 0.3 semitone).
+
+# Acceptance: short releases (round 8)
+
+Probes measurement run va-round8 (2026-11-14) batches R and R2: a sine at key 96 (2093 Hz) held at full level, 12 notes (R2; R: 4);
+its level after each note-off from the full-band analytic signal (sample resolution). The amplitude EG: a line through the level in dB
+from -3 to -40 dB under the hold. The filter EG: the sine through LPF24 at 500 with EG depth 352 and the amplitude EG holding, its level
+mapped to the EG's level through a static bank of depths 256-352 (each side its own bank), a line through log(EG level) from 0.7 to
+0.15. The engine renders the same patches and events (`vcbench render`) through the same analysis (`anR2.py`). The reference's time
+constant varies from voice to voice (the same voices give the same values again after a reload); the tolerance is three standard errors
+of its 12-voice mean.
+
+| release | reference (12 voices: mean, sd) | engine | difference | result |
+|---|---|---|---|---|
+| amplitude 0 / 8 / 16 / 24 | 0.84, 0.57 / 0.64, 0.39 / 0.97, 0.59 / 1.34, 0.55 ms | 0.63 / 0.79 / 0.96 / 1.21 | -25 / +24 / -2 / -10 % | pass (within 1.4 standard errors) |
+| amplitude 32 / 40 / 48 / 52 | 1.53, 0.58 / 1.53, 0.42 / 2.20, 0.65 / 2.61, 0.54 ms | 1.45 / 1.83 / 2.21 / 2.57 | -5 / +20 / +1 / -2 % | pass (40: 2.5 standard errors) |
+| amplitude 55 / 56 / 60 / 64 | 2.82, 0.57 / 2.60, 0.43 / 3.19, 0.57 / 3.77, 0.52 ms | 2.83 / 2.92 / 3.28 / 3.63 | 0 / +12 / +3 / -4 % | pass (56: 2.6 standard errors) |
+| filter EG 55 / 60 / 64 / 70 / 80 | 2.77, 0.45 / 3.27, 0.62 / 3.90, 0.56 / 4.85, 0.68 / 6.72, 0.41 ms | 2.88 / 3.33 / 3.71 / 4.68 / 6.27 | +4 / +2 / -5 / -4 / -7 % | pass |
+| filter EG 100 / 128 (R, 4 voices) | 13.98 / 47.4 ms | the law: 14.74 / 48.2 | +5 / +2 % | pass |
+| filter EG under 55 | not resolved (the filter's own response hides the EG; notes scatter 2-80 ms) | the amplitude's law | | reported |
+| the voice-to-voice spread (sd 0.4-0.65 ms at ageing 100; 0.87 / 0.25 ms at ageing 0 / 200, release 55) | | one time a release | | known difference |
