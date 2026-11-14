@@ -18,8 +18,7 @@ struct Ctl {  // one sound's constants for one control step of n frames
     int n; float rn;
     float ka, kd, kr, krl, fa, fd, fr, frl;  // envelope coefficients over n frames
     float piOverSr;
-    float fegSemis;                           // filter EG depth (semitones), with the boxes now
-    float lpSemi, k1, k2, lpGain;             // cutoff (semitones re 1 Hz), the sections' 1/Q and pass-band gain
+    float cut[2], feg[2], res[2];             // each filter's cutoff, EG move at level 1 (semitones) and resonance, with the boxes now
     float lfoPitch[3], osc[3];                // pitch LFO depth (semitones), oscillator out level (linear)
     alignas(16) float bend[16];               // semitones per channel
 };
@@ -95,37 +94,108 @@ VC_INLINE void oscillators(const Lane& l, const Sound& s, const Ctl& c, int n, v
     if constexpr (O2 == Wave::Pulse) l.set(PW2, pw2);
 }
 
-// ---- filters: two TPT state-variable sections in series, N lanes interleaved ---------------------
+// ---- filters: the reference's sections (va-round5 F1: every type's response is these, within 0.001 dB) -------------------
+// A state-variable section with a unit delay in its loop (lp += F bp; hp = x - lp - q bp; bp += F hp), and a one-pole
+// (y += c (x - y)). The types: LPF24 = section (q of the resonance) then section (q = 1), low-pass outputs; LPF18 = section then
+// one-pole; LPF12 = section; LPF6 = one-pole; the high-passes the same with high-pass outputs. Per filter and voice: F, q of the
+// first section, q of the second or the one-pole's c, ramped over the control step; N lanes interleaved.
 #define VC_N(...) for (int m = 0; m < N; ++m) __VA_ARGS__
-// The sections' normalisers 1 / (1 + g (g + k)) are computed from g every sample: ramping them separately from g
-// leaves the sections unstable while g moves fast (a cutoff sweep of many octaves within one control step).
-template <int N, bool HighPass>
-VC_INLINE void svf4(const Lane* l, int S1, int G, float k1, float k2, float gain, int n, vf (*buf)[kSub]) {
-    vf s1[N], s2[N], s3[N], s4[N], g[N], dg[N];
-    VC_N({ s1[m] = l[m](S1); s2[m] = l[m](S1 + 1); s3[m] = l[m](S1 + 2); s4[m] = l[m](S1 + 3);
-           g[m] = l[m](G); dg[m] = l[m](G + 1); });
-    const vf K1 = splat(k1), K2 = splat(k2), gn = splat(gain), one = splat(1.f);
+enum : int { SNone, SLow, SHigh, OLow, OHigh };  // a part of a filter: none, a section (low or high output), a one-pole (low or high)
+struct FilterKind { int a, b; };
+constexpr FilterKind kKinds[kFilterTypes] = {{SNone, SNone}, {SLow, SLow}, {SLow, OLow}, {SLow, SNone}, {OLow, SNone},
+                                             {SHigh, SHigh}, {SHigh, OHigh}, {SHigh, SNone}, {OHigh, SNone}};
+template <int N, int A, int B>
+VC_INLINE void filterRun(const Lane* l, int S, int n, vf (*buf)[kSub]) {
+    vf s1[N], s2[N], s3[N], s4[N], F[N], dF[N], qa[N], dqa[N], qb[N], dqb[N], Fb[N], dFb[N];
+    VC_N({ s1[m] = l[m](S); s2[m] = l[m](S + 1); s3[m] = l[m](S + 2); s4[m] = l[m](S + 3);
+           F[m] = l[m](S + 4); dF[m] = l[m](S + 5); qa[m] = l[m](S + 6); dqa[m] = l[m](S + 7); qb[m] = l[m](S + 8); dqb[m] = l[m](S + 9);
+           Fb[m] = l[m](S + 10); dFb[m] = l[m](S + 11); });
     for (int k = 0; k < n; ++k) {
         VC_N({
-            g[m] = g[m] + dg[m];
-            const vf gg = g[m];
-            const vf d1 = one / fma(gg, gg + K1, one), d2 = one / fma(gg, gg + K2, one);
-            vf hp = (buf[m][k] - fma(gg + K1, s1[m], s2[m])) * d1;
-            vf v = gg * hp, bp = v + s1[m]; s1[m] = bp + v;
-            v = gg * bp; vf lp = v + s2[m]; s2[m] = lp + v;
-            vf x = HighPass ? hp : lp;
-            hp = (x - fma(gg + K2, s3[m], s4[m])) * d2;
-            v = gg * hp; bp = v + s3[m]; s3[m] = bp + v;
-            v = gg * bp; lp = v + s4[m]; s4[m] = lp + v;
-            buf[m][k] = (HighPass ? hp : lp) * gn;
+            F[m] = F[m] + dF[m]; qa[m] = qa[m] + dqa[m]; qb[m] = qb[m] + dqb[m];
+            if constexpr (B == SLow || B == SHigh) Fb[m] = Fb[m] + dFb[m];
+            vf x = buf[m][k];
+            if constexpr (A == SLow || A == SHigh) {
+                s1[m] = fma(F[m], s2[m], s1[m]);
+                const vf hp = x - s1[m] - qa[m] * s2[m];
+                s2[m] = fma(F[m], hp, s2[m]);
+                x = A == SLow ? s1[m] : hp;
+            } else {  // a one-pole; its c rides in qa
+                s1[m] = fma(qa[m], x - s1[m], s1[m]);
+                x = A == OLow ? s1[m] : x - s1[m];
+            }
+            if constexpr (B == SLow || B == SHigh) {
+                s3[m] = fma(Fb[m], s4[m], s3[m]);
+                const vf hp = x - s3[m] - qb[m] * s4[m];
+                s4[m] = fma(Fb[m], hp, s4[m]);
+                x = B == SLow ? s3[m] : hp;
+            } else if constexpr (B == OLow || B == OHigh) {
+                s3[m] = fma(qb[m], x - s3[m], s3[m]);
+                x = B == OLow ? s3[m] : x - s3[m];
+            }
+            buf[m][k] = x;
         });
     }
-    VC_N({ l[m].set(S1, s1[m]); l[m].set(S1 + 1, s2[m]); l[m].set(S1 + 2, s3[m]); l[m].set(S1 + 3, s4[m]);
-           l[m].set(G, g[m]); });
+    VC_N({ l[m].set(S, s1[m]); l[m].set(S + 1, s2[m]); l[m].set(S + 2, s3[m]); l[m].set(S + 3, s4[m]);
+           l[m].set(S + 4, F[m]); l[m].set(S + 6, qa[m]); l[m].set(S + 8, qb[m]); l[m].set(S + 10, Fb[m]); });
+}
+template <int N>
+VC_INLINE void filterStage(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) {
+    switch (type) {  // once a control step: the loops have no branch
+    case 1: filterRun<N, SLow, SLow>(l, S, n, buf); break;
+    case 2: filterRun<N, SLow, OLow>(l, S, n, buf); break;
+    case 3: filterRun<N, SLow, SNone>(l, S, n, buf); break;
+    case 4: filterRun<N, OLow, SNone>(l, S, n, buf); break;
+    case 5: filterRun<N, SHigh, SHigh>(l, S, n, buf); break;
+    case 6: filterRun<N, SHigh, OHigh>(l, S, n, buf); break;
+    case 7: filterRun<N, SHigh, SNone>(l, S, n, buf); break;
+    case 8: filterRun<N, OHigh, SNone>(l, S, n, buf); break;
+    default: break;
+    }
 }
 
-constexpr float kHpK1 = 1 / 0.5412f, kHpK2 = 1 / 1.3066f;  // Butterworth pair (HPF24 stand-in, not covered)
-
+// asin(x), 0 <= x <= 1: its series under 0.5 (relative 1e-4 there), pi/2 - acos above. Control rate.
+VC_INLINE vf asinv(vf x) {
+    const vf x2 = x * x;
+    const vf s = x * fma(x2, fma(x2, fma(x2, fma(x2, splat(35.f / 1152), splat(15.f / 336)), splat(3.f / 40)), splat(1.f / 6)), splat(1.f));
+    return sel(x < splat(0.5f), s, splat(1.5707963f) - acosv(x));
+}
+// -ln(1 - u) for 0 <= u < 1: its series under 0.25 (1e-7 relative), log2 above.
+VC_INLINE vf nlog1m(vf u) {
+    vf p = splat(1.f / 9);
+    for (int k = 8; k >= 1; --k) p = fma(p, u, splat(1.f / float(k)));
+    return sel(u < splat(0.25f), u * p, log2v(splat(1.f) - u) * splat(-0.69314718f));
+}
+// 1 - e^-x for x >= 0: its series under 0.25, exp2 above.
+VC_INLINE vf omexp(vf x) {
+    vf p = splat(1.f);
+    for (int k = 7; k >= 2; --k) p = splat(1.f) - x * splat(1.f / float(k)) * p;
+    return sel(x < splat(0.25f), x * p, splat(1.f) - exp2v(x * splat(-1.4426950f)));
+}
+// sinh(x) and sin(x) for small x >= 0 (series), asinh(x) (series under 0.5, log above)
+VC_INLINE vf sinhv(vf x) { const vf x2 = x * x; return x * fma(x2, fma(x2, fma(x2, splat(1.f / 5040), splat(1.f / 120)), splat(1.f / 6)), splat(1.f)); }
+VC_INLINE vf sinv(vf x) { return cosv(splat(1.5707963f) - x); }
+VC_INLINE vf asinhv(vf x) {
+    const vf x2 = x * x;
+    const vf s = x * fma(x2, fma(x2, fma(x2, splat(-5.f / 112), splat(3.f / 40)), splat(-1.f / 6)), splat(1.f));
+    return sel(x < splat(0.5f), s, log2v(x + vsqrt(x2 + splat(1.f))) * splat(0.69314718f));
+}
+// A section's F and q (at 44.1 kHz) -> the F and q at the prepared rate with the same poles in seconds (z' = z^a, a = 44100 / rate),
+// written in small quantities so that low cutoffs keep their precision: r = sqrt(1 - qF) the poles' radius, 1 - r, and
+// s2 = (F^2 - (1 - r)^2) / 4r = sin^2(theta / 2) of the pole angle (negative: real poles, -sinh^2).
+VC_INLINE void matchPoles(vf& F, vf& q, float a) {
+    const vf one = splat(1.f), A = splat(a);
+    const vf u = vmin(q * F, splat(0.999f)), r = vsqrt(one - u), om = u / (one + r);
+    const vf s2 = vmin((F * F - om * om) / (splat(4.f) * r), one);
+    const vf sig = splat(0.5f) * nlog1m(u) * A;  // the poles' decay a sample at the new rate
+    const vm cplx = splat(0.f) < s2;
+    const vf h = A * sel(cplx, asinv(vsqrt(vmax(s2, splat(0.f)))), asinhv(vsqrt(vmax(splat(0.f) - s2, splat(0.f)))));
+    const vf sh = sel(cplx, sinv(vmin(h, splat(1.5707963f))), sinhv(h)), s2n = sh * sh;
+    const vf omn = omexp(sig), rn = one - omn;
+    const vf F2 = vmax(fma(omn, omn, sel(cplx, splat(4.f), splat(-4.f)) * rn * s2n), splat(1e-12f));
+    F = vsqrt(F2);
+    q = omn * (one + rn) / F;
+}
 // The two table levels and their crossfade for log2(increment) lg: u = tabU - 4 lg (u = 4 log2(F / f0));
 // level floor(u) + 1 weighs u - floor(u). The weight ramps over the step unless the pair changed.
 VC_INLINE void level(const Lane& l, int A, int B, int Wt, int DW, vf lg, float tabU, float stride, vm fresh, vf rn) {
@@ -175,13 +245,53 @@ VC_INLINE vf lfoStep(const Lane& l, const Lfo& o, int n, int LP, int LR, vf t, v
     return v;
 }
 
+// ---- a filter's control step ------------------------------------------------------------------------------------------
+// The cutoff as the log of the reference's frequency fc (semitones re 1 Hz: the patch's by the cutoff law, with the boxes; the EG,
+// key follow, velocity and the LFO add semitones), stopped at 22050 Hz; the reference's coefficients there (laws.cpp:
+// Ft = 2 sin(pi fc / 44100), the damping q = 2^(1 - r / 32) of the resonance r, F = Ft (1 - min(q, 1) Ft / 4), q at most 3 - 2F,
+// the one-pole's c = 1 - e^(-2 pi fc / 44100)), mapped to the prepared rate, ramped over the step. Returns the filter's output
+// gain (the resonance's pass-band gain, the high-pass sections' gain), which the amplitude applies.
+VC_INLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f, vf eg, vf lfo, vm fresh, vf rn) {
+    const int S = f ? H1 : L1, type = s.flt[f].type;
+    const FilterKind k = kKinds[type];
+    const LawTables& t = lawTables();
+    const vf one = splat(1.f);
+    const vf semi = vmin(fma(eg, splat(c.feg[f]) * l(f ? VFEG2 : VFEG), splat(c.cut[f])) + l(f ? DCUT2 : DCUT) + lfo, splat(kTopSemi));
+    const vf x = exp2v(semi * splat(1.f / 12)) * splat(3.14159265f / 44100);  // pi fc / 44100, at most pi / 2
+    const vf Ft = splat(2.f) * cosv(splat(1.5707963f) - x);
+    const vf r = vmax(vmin(splat(c.res[f]) + l(f ? VRES2 : VRES), splat(255.f)), splat(0.f));
+    vf q = exp2v(one - r * splat(1.f / 32));
+    // F under 1.95 and q at least 0: the section stays stable (F^2 + 2qF < 4, qF < 2) at every cutoff and resonance
+    vf F = vmin(Ft * (one - vmin(q, one) * Ft * splat(0.25f)), splat(1.95f));
+    const vf qm = vmax(splat(3.f) - F - F, splat(0.f));  // the damping's ceiling at high cutoffs (F3: q = 3 - 2F from cutoff 864 up, within 0.01 %)
+    q = vmin(q, qm);
+    vf qb = vmin(one, qm), Fb = Ft * (one - Ft * splat(0.25f));  // the second section: its own F at its q of 1 (F1: LPF24 at 600-900)
+    const float a = s.rateRatio;
+    if (a != 1.f) {
+        if (k.a == SLow || k.a == SHigh) matchPoles(F, q, a);
+        if (k.b == SLow || k.b == SHigh) matchPoles(Fb, qb, a);
+    }
+    const vf w = x * splat(2.f * a);  // the one-pole's pole e^-w at the prepared rate
+    if (k.a == OLow || k.a == OHigh) q = omexp(w);
+    if (k.b == OLow || k.b == OHigh) qb = omexp(w);
+    l.ramp(S + 4, S + 5, F, fresh, rn); l.ramp(S + 6, S + 7, q, fresh, rn); l.ramp(S + 8, S + 9, qb, fresh, rn); l.ramp(S + 10, S + 11, Fb, fresh, rn);
+    vf g = one;
+    if (k.a == SLow || k.a == SHigh) { const vf ri = vmin(vfloor(r), splat(254.f)); vf g0, g1; gather2(t.resGain, ri, g0, g1); g = fma(r - ri, g1 - g0, g0); }
+    if (type >= 5) {  // the high-pass's gain by the log of fc (laws.cpp: a semitone apart from 1 Hz)
+        const vf u = vmax(vmin(semi, splat(float(kHpN - 2))), splat(0.f)), ui = vfloor(u);
+        vf h0, h1; gather2(t.hpGain[type - 5], ui, h0, h1);
+        g = g * fma(u - ui, h1 - h0, h0);
+    }
+    return g;
+}
+
 // ---- control step for one lane ------------------------------------------------------------------
 template <bool LP, bool HP, bool O3>
 VC_INLINE void control(const Lane& l, const Sound& s, const Ctl& c) {
     const vm fresh = splat(0.5f) < l(FRESH);
     const vf rn = splat(c.rn);
     envStep(l, AENV, ASTG, AEND, ALOW, c.ka, c.kd, c.kr, c.krl, s.amp.sustain);
-    if constexpr (LP) envStep(l, FENV, FSTG, FEND, FLOW, c.fa, c.fd, c.fr, c.frl, s.feg.sustain);
+    if constexpr (LP || HP) envStep(l, FENV, FSTG, FEND, FLOW, c.fa, c.fd, c.fr, c.frl, s.feg.sustain);
     // pitch: key (with the sound's offsets) + drift + the channel's bend
     alignas(16) float bend[W];
     for (int i = 0; i < W; ++i) bend[i] = c.bend[l.p->channel[l.o + i] & 15];
@@ -235,21 +345,13 @@ VC_INLINE void control(const Lane& l, const Sound& s, const Ctl& c) {
         l.ramp(INC3, DINC3, vmin(exp2v(lg3), splat(0.45f)), fresh, rn);
         level(l, TA3, TB3, TW3, DTW3, lg3, s.tabU, s.stride[2], fresh, rn);
     }
-    const vf maxw = splat(1.41f);
-    if constexpr (LP) {
-        // the cutoff stops at the filter's top (raw 1023, open) however far the EG and the boxes drive it
-        vf semi = vmin(fma(l(FENV), splat(c.fegSemis), splat(c.lpSemi)) + l(DCUT) + lcut, splat(s.lpTop));
-        vf g = tanv(vmin(exp2v(semi * splat(1.f / 12)) * splat(c.piOverSr), maxw));
-        l.ramp(LG, DLG, g, fresh, rn);
-    }
-    if constexpr (HP) {
-        vf g = tanv(vmin(exp2v(splat(s.hpSemi / 12)) * splat(c.piOverSr), maxw));
-        l.ramp(HG, DHG, g, fresh, rn);
-    }
+    vf fg = splat(1.f);  // the filters' output gains
+    if constexpr (LP) fg = filterControl(l, s, c, 0, l(FENV), lcut, fresh, rn);
+    if constexpr (HP) fg = fg * filterControl(l, s, c, 1, l(FENV), splat(0.f), fresh, rn);
     // amplitude: EG x volume x fade x the sound's level and gain, equal-power pan
     vf fade = vmax(l(FADE) - l(DFADE) * splat(float(c.n)), splat(0.f));
     l.set(FADE, fade);
-    vf g = l(AENV) * l(VOL) * fade * splat(s.level * s.gain);
+    vf g = l(AENV) * l(VOL) * fade * splat(s.level * s.gain) * fg;
     if (s.plan.lfo[2]) g = g * exp2v(lamp);
     l.ramp(GL, DGL, g * splat(s.panL), vm{}, rn);
     l.ramp(GR, DGR, g * splat(s.panR), vm{}, rn);
@@ -280,8 +382,8 @@ struct Plan {
             control<LP, HP, O3 != Wave::Off>(l[m], s, c);
             oscillators<O1, O2, O3>(l[m], s, c, c.n, buf[m]);
         }
-        if constexpr (LP) svf4<N, false>(l, L1, LG, c.k1, c.k2, c.lpGain, c.n, buf);
-        if constexpr (HP) svf4<N, true>(l, H1, HG, kHpK1, kHpK2, 1.f, c.n, buf);
+        if constexpr (LP) filterStage<N>(s.flt[0].type, l, L1, c.n, buf);
+        if constexpr (HP) filterStage<N>(s.flt[1].type, l, H1, c.n, buf);
         for (int m = 0; m < N; ++m) amp(l[m], buf[m], c.n, aL, aR);
     }
     static void run(Pool& p, const Sound& s, const Ctl& c, vf* aL, vf* aR, int interleave) {
@@ -299,7 +401,7 @@ template <Wave O1, Wave O2, Wave O3, bool LP, bool HP> constexpr Kernel kK{&Plan
 const Kernel* const kKernels[72] = {VC_O(Wave::Off), VC_O(Wave::Saw), VC_O(Wave::Pulse)};
 // A table read for every wave (a square of width 0.5 has its own tables); two reads for any other pulse (describe()).
 const Kernel* kernelFor(const Sound& s) {
-    return kKernels[((int(s.plan.osc[0]) * 3 + int(s.plan.osc[1])) * 2 + (s.plan.osc[2] != Wave::Off)) * 4 + s.plan.lowPass * 2 + s.plan.highPass];
+    return kKernels[((int(s.plan.osc[0]) * 3 + int(s.plan.osc[1])) * 2 + (s.plan.osc[2] != Wave::Off)) * 4 + (s.plan.filter[0] != 0) * 2 + (s.plan.filter[1] != 0)];
 }
 
 struct FtzScope {  // flush denormals to zero while rendering (speed only: no result relies on denormals)
@@ -317,7 +419,7 @@ struct FtzScope {  // flush denormals to zero while rendering (speed only: no re
 void clearPos(Pool& p, uint32_t i) {
     for (int k = 0; k < NFIELDS; ++k) p.f[k][i] = 0.f;
     p.f[INC1][i] = p.f[INC2][i] = p.f[INC3][i] = 0.01f;
-    p.f[ASTG][i] = p.f[FSTG][i] = 2.f; p.f[VOL][i] = p.f[FADE][i] = 1.f; p.f[FRESH][i] = 1.f;
+    p.f[ASTG][i] = p.f[FSTG][i] = 2.f; p.f[VOL][i] = p.f[FADE][i] = 1.f; p.f[FRESH][i] = 1.f; p.f[VFEG][i] = p.f[VFEG2][i] = 1.f;
     p.voice[i] = 0xff; p.channel[i] = 0; p.rng[i] = 1;
 }
 }  // namespace
@@ -362,7 +464,7 @@ void Core::setPanel(uint32_t i, int source, float x) {
 void Core::setDestination(uint32_t i, int d, int v) {
     if (i >= kMaxSounds || d < 0 || d >= kDests) return;
     if (d == DCutoff) v += sound_[i].cutOffset;
-    if (d == DFegDepth) v -= 256;
+    if (d == DFegDepth || d == DFegDepth2) v -= 256;
     dest_[i][d] = int16_t(v < kDestDefs[d].lo ? kDestDefs[d].lo : v > kDestDefs[d].hi ? kDestDefs[d].hi : v);
     live_[i] = true;
 }
@@ -464,6 +566,14 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
         p.f[DA3][i] = rnd() * 2 - 1; p.f[DB3][i] = rnd() * 2 - 1; p.f[DP3][i] = rnd();
     }
     p.f[DCUT][i] = s.driftCutMean + (rnd() * 2 - 1) * s.driftCutSpread;
+    {  // key follow from key 60 (the played key; with a zone or part shift not measured) and velocity, semitones
+        const int v = int(vel * 127.f + 0.5f) < 0 ? 0 : int(vel * 127.f + 0.5f) > 127 ? 127 : int(vel * 127.f + 0.5f);
+        for (int f = 0; f < 2; ++f) {
+            p.f[f ? DCUT2 : DCUT][i] += s.flt[f].keyFollow * float(key - 60) + float(s.velCut[f][v]) * 0.125f;
+            p.f[f ? VFEG2 : VFEG][i] = float(s.velFeg[f][v]) * (1.f / 128);
+            p.f[f ? VRES2 : VRES][i] = float(s.velRes[f][v]);
+        }
+    }
     for (int k = 0; k < 3; ++k) {  // key-on reset: the cycle starts at the phase; else anywhere (not measured how it continues)
         if (!s.plan.lfo[k]) continue;
         p.f[LP0 + k][i] = s.lfo[k].reset ? s.lfo[k].phase0 : rnd();
@@ -478,7 +588,6 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
     if (s.porta && (s.portaFull || keyHeld) && lastVoice_[si] >= 0) glide_(si, i, from);
     slot_[v] = {int8_t(si), uint8_t(i), false, 0, 0};
     }
-    (void)vel;  // velocity has no effect on the covered laws (measured at sensitivity 0)
     if (s.mono && nheld_[si] < kMaxVoices) held_[si][nheld_[si]++] = {uint8_t(v), k};
     lastKey_[si] = k; lastVoice_[si] = int16_t(v);
     chan_[si] = uint8_t(ch & 15);
@@ -594,7 +703,7 @@ void Core::render(float* L, float* R, uint32_t frames) {
             c.n = n; c.rn = 1.f / float(n); c.piOverSr = float(3.14159265358979 / sr_);
             const float fn = float(n);
             float la = s.amp.la, ld = s.amp.ld, lr = s.amp.lr, lrl = s.amp.lrLow, fla = s.feg.la, fld = s.feg.ld, flr = s.feg.lr, flrl = s.feg.lrLow;
-            c.fegSemis = s.fegSemis; c.lpSemi = s.lpSemi; c.k1 = s.lpK1; c.k2 = s.lpK2; c.lpGain = s.lpGain;
+            for (int f = 0; f < 2; ++f) { c.cut[f] = s.flt[f].cut; c.feg[f] = s.flt[f].feg; c.res[f] = s.flt[f].res; }
             c.lfoPitch[0] = s.lfoPitch[0]; c.lfoPitch[1] = s.lfoPitch[1]; c.lfoPitch[2] = s.lfoPitch[2];
             c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
             if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
@@ -607,10 +716,13 @@ void Core::render(float* L, float* R, uint32_t frames) {
                 c.lfoPitch[0] = t.pitchSemi[raw[DPitchDepth1]]; c.lfoPitch[1] = t.pitchSemi[raw[DPitchDepth2]]; c.lfoPitch[2] = t.pitchSemi[raw[DPitchDepth3]];
                 if (s.osc[0] > 0) c.osc[0] = t.oscLevel[raw[DOscLevel1]];  // an oscillator at level 0 is not in the plan
                 if (s.osc[1] > 0) c.osc[1] = t.oscLevel[raw[DOscLevel2]];
-                c.lpSemi = t.cutSemi[raw[DCutoff]];
-                const float steps = float(raw[DFegDepth]) + s.fegOffSteps;  // the part's offset, then the depth's stop (+-192)
-                c.fegSemis = kFegSemisPerStep * (steps < -192.f ? -192.f : steps > 192.f ? 192.f : steps);
-                c.k1 = t.k1[raw[DReso]]; c.k2 = t.k2[raw[DReso]]; c.lpGain = t.gain[raw[DReso]];
+                for (int f = 0; f < 2; ++f) {
+                    const Dest dc = f ? DCutoff2 : DCutoff, dd = f ? DFegDepth2 : DFegDepth, dr = f ? DReso2 : DReso;
+                    c.cut[f] = t.cutSemi[raw[dc]];
+                    const float steps = float(raw[dd]) + (f ? 0.f : s.fegOffSteps);  // the part's offset (filter 1), then the depth's stop (+-192)
+                    c.feg[f] = kFegSemisPerStep * (steps < -192.f ? -192.f : steps > 192.f ? 192.f : steps);
+                    c.res[f] = float(raw[dr]);
+                }
                 const float k = -s.invSrLn2;
                 auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };
                 la = tau(TAttack, DAmpAttack, la); ld = tau(TAmpDecay, DAmpDecay, ld);
@@ -649,13 +761,14 @@ namespace vcore {
 // lanes of 4; a partly filled lane costs as a full one. A table read (a saw, or a pulse of width 0.5)
 // is measured; any other pulse width is two reads, counted as such (not measured).
 Cost estimateCost(const PlanDesc& d) {
-    constexpr double kBase = 2780, kRead = 1670, kOsc3 = 2225, kLowPass = 1295, kHighPass = 1155, kLfo = 130, kOscLfo = 416, kBox = 47, kRest = 216;
+    constexpr double kBase = 2780, kRead = 1670, kOsc3 = 2225, kTwoSections = 2283, kOneSection = 1705, kLfo = 130, kOscLfo = 416, kBox = 47, kRest = 216;
     double v = kBase + kBox * d.boxes;  // the boxes run once per sound a step: their share at 8 voices
     for (int n = 0; n < 2; ++n) v += d.osc[n] == Wave::Saw ? kRead : d.osc[n] == Wave::Pulse ? 2 * kRead : 0;
     if (d.osc[2] != Wave::Off) v += kOsc3;  // its read, pitch and drift (plan 10: 2.2k a voice)
     for (bool l : d.oscLfo) v += l ? kOscLfo : 0;  // the LFO and the width's ramp (plan 11: with the second read, 2.1k)
-    if (d.lowPass) v += kLowPass;
-    if (d.highPass) v += kHighPass;
+    // a filter of two sections (LPF24, HPF24; round 5 plans 4 and 14: 2.3k and 2.2k a voice at 48 kHz, its poles mapped), any other
+    // type as a section and a one-pole (LPF18, plan 12: 1.7k; LPF12, LPF6 and their high-passes not measured, counted so)
+    for (int f = 0; f < 2; ++f) if (d.filter[f]) v += d.filter[f] == 1 || d.filter[f] == 5 ? kTwoSections : kOneSection;
     for (bool l : d.lfo) v += l ? kLfo : 0;
     return {v, kRest};  // rest: the whole core with no voice sounding (a sound adds nothing at rest)
 }

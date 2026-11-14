@@ -48,32 +48,3 @@ constexpr Law kShortAttack{kShortAttackX, kShortAttackY, 9, 0, 96};
 constexpr float kPitchCentsX[] = {0, 80, 124, 294, 394, 454, 504};
 constexpr float kPitchCentsY[] = {0, 8, 30, 200, 400, 700, 1200};
 constexpr Law kPitchCents{kPitchCentsX, kPitchCentsY, 7, 0, 504};
-
-// LPF24 cutoff -> Hz, interpolated in log frequency: the saw-ladder method (a saw at key 60 through LPF24, resonance 0, every
-// 8 raw steps from 340, 300 and 320 from a second ladder, matched by its harmonics to this core's own filter at a free cutoff,
-// measurement run filter-eg-sustain s1 and conv-cutoff k1; shape error 0.02-0.4 dB RMS up to 764, 1-2.5 dB at 772-940 where the
-// reference's slope differs from the two sections', under 0.25 dB from 948); 1023 open; measured 300..1023
-constexpr float kLp24CutoffX[] = {300, 320, 340, 348, 356, 364, 372, 380, 388, 396, 404, 412, 420, 428, 436, 444, 452, 460, 468, 476, 484, 492, 500, 508, 516, 524, 532, 540, 548, 556, 564, 572, 580, 588, 596, 604, 612, 620, 628, 636, 644, 652, 660, 668, 676, 684, 692, 700, 708, 716, 724, 732, 740, 748, 756, 764, 772, 780, 788, 796, 804, 812, 820, 828, 836, 844, 852, 860, 868, 876, 884, 892, 900, 908, 916, 924, 932, 940, 948, 956, 964, 972, 980, 988, 996, 1023};
-constexpr float kLp24CutoffY[] = {27.3, 29, 31, 33.6, 36.1, 38.5, 40.6, 43.1, 45.5, 48.1, 50, 51.9, 54.1, 56.8, 65.1, 72.8, 81.5, 90.4, 100.8, 111.3, 123.9, 134.8, 148.2, 162.8, 206.9, 249.5, 279.5, 301.7, 323.8, 344.1, 363.3, 381.3, 397.5, 413.8, 429, 483.3, 540.8, 592.6, 640.4, 686.4, 728.5, 770.1, 808.4, 845, 879.7, 932.5, 1062.2, 1175.4, 1288, 1392, 1489.8, 1590.1, 1685.4, 1764.3, 1852, 1936, 2139.2, 2457.4, 2776.2, 3071.8, 3403.7, 3673.4, 3893.6, 4098.5, 4284.4, 4472.6, 4649.6, 5223.8, 5804.2, 6316.4, 6779.2, 7215.5, 7605.8, 7972.9, 8300, 8628.5, 8920.4, 9363.9, 10549.5, 12270.4, 14571.8, 16326.1, 17644, 18701.8, 19658.8, 20000};
-constexpr Law kLp24Cutoff{kLp24CutoffX, kLp24CutoffY, 86, 300, 1023};
-
-// LPF24 cutoff under 300 -> Hz: the converter's fitted table (another filter's), scaled in laws.cpp to join the measured law at 300; NOT a measured law here (reported as not covered); measured 0..1023
-constexpr float kLp24WideX[] = {0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512, 528, 544, 560, 576, 592, 608, 624, 640, 656, 672, 688, 704, 720, 736, 752, 768, 784, 800, 816, 832, 848, 864, 880, 896, 912, 928, 944, 960, 976, 992, 1008, 1023};
-constexpr float kLp24WideY[] = {42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 42.01763, 45.9284, 55.47688, 66.0612, 74.29267, 83.35458, 90.86312, 105.271, 127.5305, 146.6007, 163.104, 178.563, 193.0512, 241.5839, 282.1448, 317.8905, 349.6648, 377.1426, 454.4233, 541.7226, 616.0757, 681.9575, 741.8102, 850.6457, 1037.334, 1198.95, 1341.756, 1470.524, 1595.524, 2032.7, 2431.95, 2816.406, 3208.737, 3617.51, 4676.18, 5626.244, 6493.428, 7322.427, 8155.304, 9496.398, 12021.1, 14207.74, 15983.71, 17186.22, 17415.46};
-constexpr Law kLp24Wide{kLp24WideX, kLp24WideY, 65, 0, 1023};
-
-// LPF24 resonance -> log2 Q of the first section (at cutoff 636); measured 0..255
-constexpr float kLp24Q1X[] = {0, 32, 64, 96, 128, 160, 192, 224, 255};
-constexpr float kLp24Q1Y[] = {-1.560643, -0.7107557, -0.3695945, -0.1976, -0.1827861, -0.04990491, 0.03562391, 0.246104, 0.3138263};
-constexpr Law kLp24Q1{kLp24Q1X, kLp24Q1Y, 9, 0, 255};
-
-// LPF24 resonance -> log2 Q of the second section (at cutoff 636); measured 0..255
-constexpr float kLp24Q2X[] = {0, 32, 64, 96, 128, 160, 192, 224, 255};
-constexpr float kLp24Q2Y[] = {0.24123, 0.4956952, 1.205393, 2.050328, 2.93885, 3.775261, 4.678523, 5.47252, 5.884109};
-constexpr Law kLp24Q2{kLp24Q2X, kLp24Q2Y, 9, 0, 255};
-
-// LPF24 resonance -> pass-band gain, dB (at cutoff 636); measured 0..255
-constexpr float kLp24GainX[] = {0, 32, 64, 96, 128, 160, 192, 224, 255};
-constexpr float kLp24GainY[] = {0.74, -1.33, -3.36, -4.53, -5.33, -6.74, -8.13, -10.69, -14.12};
-constexpr Law kLp24Gain{kLp24GainX, kLp24GainY, 9, 0, 255};
-

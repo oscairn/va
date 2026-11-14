@@ -11,11 +11,11 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 | 3-10 | Knob 1-8 | `knob1`..`knob8` | 0..1 | the patch's own value (raw `PartAssignableKnobNValue` / 1023; model default 512) | the part's knob N, live |
 | 11 | Ribbon | `ribbon` | 0..1 | 0 | the ribbon as a controller box source (source 6), live; the box sees round(value x 1023) |
 | 12, 13 | Switch 1, Switch 2 | `switch1`, `switch2` | 0 or 1, stepped | 0 | switches 1-2 as box sources (16, 17): 0 or 1023 |
-| 14-27 | the controller box destinations | none (the raw patch's own parameters) | the raw parameter's range | the model's default; shows the sound's own value | below; modulatable |
+| 14-30 | the controller box destinations | none (the raw patch's own parameters) | the raw parameter's range | the model's default; shows the sound's own value | below; modulatable |
 
 The knobs, the ribbon and the switches are what the reference's controller boxes read (box sources 8-15 = knobs 1-8). A change takes
 effect at the next control step of the core (at most 16 frames). Whatever the boxes add, the cutoff stops at the
-filter's top (raw 1023) and the filter EG's depth at its range (raw 64-448: a box driving it past 448 sounds as the static
+filter's top (22.05 kHz) and the filter EG's depth at its range (raw 64-448: a box driving it past 448 sounds as the static
 448 in the reference). Nothing is recompiled and nothing is allocated on the audio thread: the boxes are compiled
 with the sound, the knob value is applied in the control step. A sound starts at its patch's own knob
 values (`prepare` text or the raw patch); the CLAP state and the sound-contexts snapshot save the knob
@@ -23,7 +23,7 @@ parameters, the ribbon and the switches with the other values (`oscairn-va-state
 values are ids 0-13; the formats before them are not read). A host never passes the ribbon's or the switches' MIDI controllers
 (CC 16, 86, 87) to a plugin, so they are parameters, as the knobs.
 
-## Controller box destinations (ids 14-27)
+## Controller box destinations (ids 14-30)
 
 Every destination the core's boxes move is also a parameter, flagged `CLAP_PARAM_IS_MODULATABLE`, so that a converter can map a
 plain source-to-destination box onto the host's control tree with a host-side curve instead of an in-engine box. Its value is
@@ -44,6 +44,9 @@ the sound slot until the host changes it; a modulation for one note (a note id o
 | 21-23 | Filter EG Attack / Decay / Release | `FilterCutoffEGAttackTime`, `...DecayTime`, `...ReleaseTime` | 0-255 | 255 |
 | 24-26 | Amp EG Attack / Decay / Release | `AmplitudeEGAttackTime`, `...DecayTime`, `...ReleaseTime` | 0-255 | 255 |
 | 27 | Osc 3 Pitch LFO Depth | `Osc3OscillatorPitchLFODepth` | 0-494 | 247 |
+| 28 | Filter 2 Cutoff | `Filter2FilterCutoff` (the part's cutoff offset is not added: on filter 2 it is not measured) | 0-1023 | 1023 |
+| 29 | Filter 2 EG Depth | `Filter2FilterCutoffEGDepth` | 64-448 | 192 |
+| 30 | Filter 2 Resonance | `Filter2FilterResonance` | 0-255 | 255 |
 
 For a linear box (curve Standard 5) both paths give the same result: the ABI test plays the mod wheel at 127 through a box of
 ratio +8 on the cutoff and a modulation of 127.875 steps, bit for bit the same. In-engine boxes stay for what a host curve does
@@ -56,7 +59,7 @@ what was measured, as a knob can.
 Every parameter has a hint: Level (role level, priority 1), Pan (pan), Cutoff (cutoff, 2), Resonance (resonance, 3), Filter EG
 Depth (filter envelope, 4), the filter EG's and the amplitude EG's attack, decay and release (their roles, and an envelope view
 each: views 2 and 1, fields attack / decay / release), Osc 1 / 2 Level (levels 1 and 2); the knobs, and the ribbon with the
-switches, are a group each (the switches as switches).
+switches, and filter 2's cutoff, EG depth and resonance (ids 28-30), are a group each (the switches as switches).
 
 ## MIDI controllers (controller box sources)
 
@@ -84,7 +87,8 @@ The box law (va-round3 R1, `docs/coverage.md`): a box's output is (c + o - 1024)
 the source's value, o 1024 unipolar or 512 bipolar, ratio the raw value - 128 (raw 255: +128); a destination's outputs are
 summed and the sum clamped to +-8192; the destination's raw value moves by the sum x span / 8192 steps, toward zero, and
 stays within its range. A box reaches an oscillator's or filter 1's destination only where that unit's switch for the box
-is on.
+is on (destinations 142, 143 and 145 move filter 1 and filter 2, each where its switch for the box is on; filter 2's are ids
+28-30).
 
 Coverage (`vcore::notCovered`, `vcbench coverage`) is judged at the patch's own knob values. A knob moved
 live can take a box outside what was measured; the other sources (performance controllers) are judged over their whole

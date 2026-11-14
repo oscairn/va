@@ -2,12 +2,15 @@
 // The patch: defaults, text form, coverage and the plan a patch needs.
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <initializer_list>
 
 #include "vcore.h"
 
 namespace vcore {
+double cutoffHz(int raw);  // laws.cpp: the cutoff law
 
 const ParamDef kParamDefs[kParamCount] = {
 #define X(id, name, lo, hi, def) {#id, name, lo, hi, def},
@@ -85,6 +88,11 @@ bool readPatch(const char* text, Patch& out, char* error, size_t cap) {
 
 // ---- coverage -----------------------------------------------------------------------------------
 namespace {
+// The filters' measured reach (va-round5; docs/coverage.md). Resonance: any value while the cutoff's highest frequency (the patch's
+// with its boxes, the EG at its peak, key follow up to the zone's top key, velocity) is at most kResAnyHz, up to 64 to kRes64Hz, up
+// to 32 anywhere (LPF12 and LPF18 within 1.3 dB at the peak harmonic there, LPF24 within 0.7 dB). HPF18 and HPF6 measured from
+// cutoff 340 to 960.
+constexpr float kResAnyHz[2] = {2100, 700}, kRes64Hz[2] = {5900, 2100};  // LPF12 / LPF18, LPF24
 struct Gaps {
     Gap* out; uint32_t cap, n = 0;
     void add(Param p, const char* why) { if (n < cap) out[n] = {p, why}; ++n; }
@@ -108,8 +116,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
     for (int b = 0; b < 16; ++b) {
         if (!q[box(b, Box1ControllerSetSwitch)]) continue;
         const int src = q[box(b, Box1ControllerSetSource)], dest = q[box(b, Box1ControllerSetDestination)];
-        Dest d[3]; int nd = 0;
-        bool toF2 = false;  // filter 2 (the HPF24 stand-in): a box that moves it is not built
+        Dest d[4]; int nd = 0;
         auto oscOn = [&](int n) { return q[osc(n, Osc1OscillatorOutLevel)] && q[Param(osc(n, Osc1OscillatorControllerSet1Switch) + b)]; };
         const bool f1 = q[Filter1FilterType] && q[Param(Filter1FilterControllerBox1Switch + b)];
         const bool f2 = q[Filter2FilterType] && q[Param(Filter2FilterControllerBox1Switch + b)];
@@ -117,8 +124,8 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         case kDestPitchDepth: for (int n = 0; n < 2; ++n) if (oscOn(n)) d[nd++] = Dest(DPitchDepth1 + n); if (oscOn(2)) d[nd++] = DPitchDepth3; break;
         case kDestOscLevel: for (int n = 0; n < 2; ++n) if (q[Param(osc(n, Osc1OscillatorControllerSet1Switch) + b)]) d[nd++] = Dest(DOscLevel1 + n); break;
         case kDestCutoff: case kDestFegDepth: case kDestReso:
-            toF2 = f2;
             if (f1) d[nd++] = dest == kDestCutoff ? DCutoff : dest == kDestFegDepth ? DFegDepth : DReso;
+            if (f2) d[nd++] = dest == kDestCutoff ? DCutoff2 : dest == kDestFegDepth ? DFegDepth2 : DReso2;
             break;
         case kDestFegAttack: d[nd++] = DFegAttack; break;
         case kDestFegDecay: d[nd++] = DFegDecay; break;
@@ -128,7 +135,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         case kDestAmpRelease: d[nd++] = DAmpRelease; break;
         default: g.add(box(b, Box1ControllerSetDestination), "controller box destination: not built"); continue;
         }
-        if (!nd && !toF2) continue;  // reaches no unit that sounds
+        if (!nd) continue;  // reaches no unit that sounds
         const bool knob = src >= 8 && src <= 15;
         if (src == 2) { g.add(box(b, Box1ControllerSetSource), "controller box source aftertouch: its value map not measured (the recorder cannot send channel pressure)"); continue; }
         if (src == 4 || src == 5 || src >= kSources) { g.add(box(b, Box1ControllerSetSource), "controller box source: not built (foot controller 2, foot switch, sequenced and envelope-following sources)"); continue; }
@@ -153,14 +160,14 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         const float ratio = float(rr == 127 ? 128 : rr), off = q[box(b, Box1ControllerSetPolarity)] ? 512.f : 1024.f;
         auto out = [&](float c) { const float o = (c + off - 1024) * ratio / 8; return o < -8192 ? -8192.f : o > 8192 ? 8192.f : o; };
         const float a = out(clo), z = out(chi);
-        if (toF2 && (a != 0 || z != 0)) g.add(box(b, Box1ControllerSetDestination), "controller box moving filter 2: not built");
         for (int i = 0; i < nd; ++i) { lo[d[i]] += a < z ? a : z; hi[d[i]] += a < z ? z : a; any[d[i]] = true; }
     }
     const int st[kDests] = {q[Osc1OscillatorPitchLFODepth], q[Osc2OscillatorPitchLFODepth], q[Osc1OscillatorOutLevel], q[Osc2OscillatorOutLevel],
                             [&] { const int c = q[Filter1FilterCutoff] + 16 * (q[PartFilterCutoffFrequency] - 64); return c < 0 ? 0 : c > 1023 ? 1023 : c; }(),  // the part's offset
-                            q[Filter1FilterCutoffEGDepth] - 256 + int(3.184 * (q[PartFEGDepth] - 64)), q[Filter1FilterResonance], q[FilterCutoffEGAttackTime],
+                            q[Filter1FilterCutoffEGDepth] - 256 + 3 * (q[PartFEGDepth] - 64), q[Filter1FilterResonance], q[FilterCutoffEGAttackTime],
                             q[FilterCutoffEGDecayTime], q[FilterCutoffEGReleaseTime], q[AmplitudeEGAttackTime], q[AmplitudeEGDecayTime],
-                            q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth]};
+                            q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth], q[Filter2FilterCutoff], q[Filter2FilterCutoffEGDepth] - 256,
+                            q[Filter2FilterResonance]};
     for (int d = 0; d < kDests; ++d) {
         auto at = [&](float t) {
             t = t < -8192 ? -8192 : t > 8192 ? 8192 : t;
@@ -232,31 +239,38 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
                         Osc1OscillatorOutLevelVelocitySensitivity})
             g.need(q, osc(n, p), 256, 256, "velocity sensitivity: no measured law");
     }
-    // filters
-    const int t1 = q[Filter1FilterType], t2 = q[Filter2FilterType];
-    if (t1 != 0 && t1 != 1) g.add(Filter1FilterType, "filter 1 type: only LPF24 and thru are built");
-    if (t1 == 1) {
-        const int clo = r.lo[DCutoff], chi = r.hi[DCutoff];
-        if (clo < 300) g.add(Filter1FilterCutoff, "cutoff (with its boxes and the part's offset): law measured 300-1023");
-        if (r.hi[DReso] && (clo < 400 || chi > 800)) g.add(Filter1FilterResonance, "resonance: law measured at cutoffs 400-800");
-        g.need(q, Filter1FilterCutoffKeyFollow, 0, 0, "key follow: no measured law");
-        if (r.lo[DFegDepth] < -160) g.add(Filter1FilterCutoffEGDepth, "EG depth (with its boxes) under 96: law measured 96-448 (it stops at 448)");
-    }
-    if (t2 == 5) {
-        if (q[Filter2FilterCutoff] || q[Filter2FilterResonance]) g.add(Filter2FilterCutoff, "HPF24: measured only at cutoff 0, resonance 0 (transparent)");
-        g.need(q, Filter2FilterCutoffEGDepth, 256, 256, "HPF24: EG depth not measured");
-    } else if (t2 != 0) g.add(Filter2FilterType, "filter 2 type: only HPF24 at cutoff 0 and thru are built");
-    for (int n = 0; n < 2; ++n) {
-        if (!q[flt(n, Filter1FilterType)]) continue;
-        if (n == 1) g.need(q, Filter2FilterCutoffLFODepth, 256, 256, "filter 2 LFO: not built");
-        g.need(q, flt(n, Filter1FilterSaturatorDrive), 0, 0, "saturator: not built");
-        g.need(q, flt(n, Filter1FilterOutLevel), 64, 64, "filter out level: no measured law");
-        for (Param p : {Filter1FilterCutoffVelocitySensitivity, Filter1FilterCutoffEGDepthVelocitySensitivity,
-                        Filter1FilterResonanceVelocitySensitivity, Filter1FilterSaturatorDriveVelocitySensitivity})
-            g.need(q, flt(n, p), 256, 256, "velocity sensitivity: no measured law");
+    // filters (va-round5: the reference's sections and their laws, docs/coverage.md)
+    for (int f = 0; f < 2; ++f) {
+        const int t = q[flt(f, Filter1FilterType)];
+        if (!t) continue;
+        const Param type = flt(f, Filter1FilterType);
+        if (t > 8) { g.add(type, "band-pass filters: not built"); continue; }
+        const bool high = t >= 5;
+        const Dest dc = f ? DCutoff2 : DCutoff, dr = f ? DReso2 : DReso, dd = f ? DFegDepth2 : DFegDepth;
+        if (high && r.hi[dr] > 0) g.add(flt(f, Filter1FilterResonance), "high-pass resonance: its pass-band gain not measured");
+        if ((t == 6 || t == 8) && (r.lo[dc] < 340 || r.hi[dc] > 960)) g.add(flt(f, Filter1FilterCutoff), "HPF18 / HPF6: measured at cutoffs 340-960");
+        if (!high && t != 4 && r.hi[dr] > 32) {
+            const double depth = 0.5 * std::max(0, r.hi[dd]) + (f ? 0.0 : 1.5 * (q[PartFEGDepth] - 64) * (q[PartFEGDepth] > 64));
+            const int top = q[ZoneZoneNoteLimitHigh] < q[PartNoteLimitHigh] ? q[ZoneZoneNoteLimitHigh] : q[PartNoteLimitHigh];
+            static const double kf[6] = {0, 1 / 3.0, 0.5, 2 / 3.0, 1, 2};
+            const double vs = (q[flt(f, Filter1FilterCutoffVelocitySensitivity)] - 256) * 0.065 * (q[flt(f, Filter1FilterCutoffVelocitySensitivity)] > 256);
+            const double peak = cutoffHz(r.hi[dc]) * std::exp2((depth + kf[q[flt(f, Filter1FilterCutoffKeyFollow)]] * std::max(0, top - 60) + vs) / 12);
+            const int k = t == 1;
+            if (peak > kResAnyHz[k] && (r.hi[dr] > 64 || peak > kRes64Hz[k]))
+                g.add(flt(f, Filter1FilterResonance), "resonance at high cutoffs: the fit misses by over 1 dB there (any value to 2.1 kHz, LPF24 0.7 kHz; to 64 up to 5.9 / 2.1 kHz; 32 anywhere)");
+        }
+        if (f == 1 && q[PartFilterCutoffFrequency] != 64 && !(q[Filter2FilterCutoff] == 0 && q[PartFilterCutoffFrequency] < 64))
+            g.add(PartFilterCutoffFrequency, "the part's cutoff offset on filter 2: not measured");
+        if (r.lo[dd] < -160) g.add(flt(f, Filter1FilterCutoffEGDepth), "EG depth (with its boxes) under 96: law measured 96-448 (it stops at 448)");
+        if (f == 1) g.need(q, Filter2FilterCutoffLFODepth, 256, 256, "filter 2 LFO depth: not measured");
+        g.need(q, flt(f, Filter1FilterSaturatorDrive), 0, 0, "saturator: not built");
+        g.need(q, flt(f, Filter1FilterOutLevel), 64, 64, "filter out level: no measured law");
+        g.need(q, flt(f, Filter1FilterSaturatorDriveVelocitySensitivity), 256, 256, "saturator velocity sensitivity: not built");
+        g.need(q, flt(f, Filter1FilterResonanceVelocitySensitivity), 256, 256, "resonance velocity sensitivity: measured at velocities 1 and 127 only");
     }
     g.need(q, ModifierWaveFolder, 0, 0, "wave folder: out of scope");
     // envelopes
+    const int t1 = q[Filter1FilterType] || q[Filter2FilterType];
     if (t1 && (r.lo[DFegDecay] < 144 || r.hi[DFegDecay] > 255)) g.add(FilterCutoffEGDecayTime, "decay (with its boxes): law measured 144-255");
     if (t1 && r.lo[DFegRelease] < 128) g.add(FilterCutoffEGReleaseTime, "release (with its boxes): law measured 128-255");
     g.need(q, FilterCutoffEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
@@ -317,6 +331,21 @@ bool keySounds(const Patch& q, int key, int vel) {
            in(vel, q[ZoneZoneVelocityLimitLow], q[ZoneZoneVelocityLimitHigh]) && in(vel, q[PartVelocityLimitLow], q[PartVelocityLimitHigh]);
 }
 
+// Filter 2 a high-pass at cutoff 64 or under (fc at most 5.2 Hz) with no resonance, EG depth, key follow, velocity or box moving it:
+// the stage is left out and its pass-band gain applied to the level (va-round5 F3: HPF24 at 0 is -0.65 dB from 20 Hz up).
+bool highPassAsGain(const Patch& q) {
+    if (q[Filter2FilterType] < 5 || q[Filter2FilterType] > 8 || q[Filter2FilterCutoff] > 64 || q[Filter2FilterResonance] ||
+        q[Filter2FilterCutoffEGDepth] != 256 || q[Filter2FilterCutoffKeyFollow] || q[Filter2FilterCutoffVelocitySensitivity] != 256 ||
+        q[Filter2FilterCutoffEGDepthVelocitySensitivity] != 256 || q[Filter2FilterResonanceVelocitySensitivity] != 256)
+        return false;
+    for (int b = 0; b < 16; ++b) {
+        const int d = q[box(b, Box1ControllerSetDestination)];
+        if (q[box(b, Box1ControllerSetSwitch)] && q[Param(Filter2FilterControllerBox1Switch + b)] && (d == kDestCutoff || d == kDestFegDepth || d == kDestReso))
+            return false;
+    }
+    return true;
+}
+
 PlanDesc describe(const Patch& q) {
     PlanDesc d{};
     // a table read for every wave but a pulse whose width is not 0.5 or moves (oscillator 3: a table read always; its LFO not built)
@@ -326,22 +355,21 @@ PlanDesc describe(const Patch& q) {
                  : q[osc(n, Osc1OscillatorWave)] == 2 && n < 2 && (q[osc(n, Osc1OscillatorPulseWidth)] != 128 || pwm) ? Wave::Pulse : Wave::Saw;
         if (n < 2) d.oscLfo[n] = d.osc[n] == Wave::Pulse && pwm;
     }
-    d.lowPass = q[Filter1FilterType] != 0;
-    // HPF24 at cutoff 0 and resonance 0 measured transparent (within 0.3 dB from 20 Hz): no stage
-    d.highPass = q[Filter2FilterType] != 0 && (q[Filter2FilterCutoff] || q[Filter2FilterResonance]);
+    for (int f = 0; f < 2; ++f) { const int t = q[flt(f, Filter1FilterType)]; d.filter[f] = uint8_t(t < kFilterTypes ? t : 0); }
+    if (highPassAsGain(q)) d.filter[1] = 0;  // filter 2 a high-pass under 5.2 Hz that nothing moves: its pass-band gain only (laws.cpp)
     for (int n = 0; n < 3; ++n) d.lfo[0] |= d.osc[n] != Wave::Off && q[osc(n, Osc1OscillatorPitchLFODepth)] != 247;
     for (int b = 0; b < 16; ++b)  // a box on an oscillator's pitch LFO depth
         if (q[box(b, Box1ControllerSetSwitch)] && q[box(b, Box1ControllerSetDestination)] == kDestPitchDepth)
             for (int n = 0; n < 3; ++n) d.lfo[0] |= d.osc[n] != Wave::Off && q[Param(osc(n, Osc1OscillatorControllerSet1Switch) + b)];
-    d.lfo[1] = d.lowPass && q[Filter1FilterCutoffLFODepth] != 256;
+    d.lfo[1] = d.filter[0] && q[Filter1FilterCutoffLFODepth] != 256;
     for (int b = 0; b < 16; ++b) d.boxes += q[box(b, Box1ControllerSetSwitch)] ? 1 : 0;
     d.lfo[2] = q[AmplitudeLevelLFODepth] != 128;
     auto add = [&](Stage s) { d.stage[d.count++] = s; };
     if (d.osc[0] != Wave::Off) add(d.osc[0] == Wave::Saw ? Stage::Saw1 : Stage::Pulse1);
     if (d.osc[1] != Wave::Off) add(d.osc[1] == Wave::Saw ? Stage::Saw2 : Stage::Pulse2);
     if (d.osc[2] != Wave::Off) add(Stage::Table3);
-    if (d.lowPass) add(Stage::LowPass24);
-    if (d.highPass) add(Stage::HighPass24);
+    if (d.filter[0]) add(Stage::Filter1);
+    if (d.filter[1]) add(Stage::Filter2);
     add(Stage::Amp);
     return d;
 }

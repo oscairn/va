@@ -17,6 +17,19 @@ not a CTest test. Shown failing with a baseline lowered to 50000 for 8 voices (e
 
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
 
+**Round 5** (the reference's filter structure, filter 2 built, key follow and velocity): rest 216, 1 held 47,841, 4 held 48,273,
+8 held 85,745 (**10.7k a voice**, gate 15k), 16 held 159,538, 8 held one lane at a time 84,537, the pattern 55,387 (max 86,738);
+shedding 8 / 16: 90,161 / 164,209 then 29,367 / 54,143, then rest. Plans (8 held voices, per voice): saw 4,506; saw + pulse 6,186;
+saw + LPF24 8,918 (its box on the filter EG depth reaches filter 2 too, so filter 2's HPF24 runs); probe A 10,718; probe A with
+filter 2 left out (`14-*`: its HPF24 at cutoff 0 then only a gain) 8,517; saw + LPF18 6,211; saw + LPF24 + a moving HPF24 8,918;
+three LFOs 11,186; 16 boxes 11,879; a third oscillator 12,827; a pulse width LFO 12,568. Every plan class within the 15k gate.
+The filters cost more than the TPT pair they replace: a two-section filter 2.3k a voice (was 1.3k), filter 2's HPF24 2.2k, LPF18
+1.7k, at 48 kHz, where each section's F and q are recomputed at control rate so that its poles are the reference's at 44.1 kHz
+(the mapping is skipped at 44.1 kHz; not measured there). Probe A rose by 3.2k a voice: 1.0k its low-pass, 2.2k its filter 2,
+which round 4 left out as transparent (the reference's HPF24 at 0 is -0.65 dB and a box on the filter EG depth moves it). The
+regression baseline (`tools/cost/baseline.txt`) is reset to these figures. `vcore::estimateCost` counts 2,283 for a two-section
+filter and 1,705 for any other type (LPF12, LPF6 and the one-section high-passes not measured).
+
 **Round 4** (commit bb74f6a: the part's filter offsets, the box destinations as parameters, portamento, mono, the new waves,
 the third oscillator, the pulse width LFO): rest 215, 1 held 35,916, 4 held 36,348, 8 held 60,228 (7.5k a voice, gate 15k),
 16 held 108,005, 8 held one lane at a time 60,228, the pattern 40,888 (max 61,064); shedding 8 / 16: 64,645 / 112,677 then
@@ -103,5 +116,6 @@ Read by the voices (float, 41 levels of 2049 samples, a level 8.2 KB; two adjace
 | a third oscillator | its wave's set (probe A + a sine: 680 KB) | as its wave |
 | the LFOs | none (computed) | 0 |
 | controller boxes | the laws at every raw value (`LawTables`, built once per process) and the curves' knots, read once per sound a step | 17.9 KB + 0.5 KB |
+| filters (round 5) | per voice a control step: the resonance's gain (1 KB) and a high-pass's gain by semitone (0.7 KB a type); the cutoff law (4 KB, part of `LawTables`) once per sound a step with boxes; per sound 1 KB of velocity tables | 1.7 KB read a voice |
 
 A voice touches two adjacent levels of a set (16 KB) per oscillator; which ones moves with its pitch.

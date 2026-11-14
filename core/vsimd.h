@@ -122,6 +122,29 @@ VC_INLINE float hsum(vf a) { return a.v; }
 VC_INLINE void gather2(const float* t, vf i, vf& lo, vf& hi) { const int32_t n = int32_t(i.v); lo.v = t[n]; hi.v = t[n + 1]; }
 #endif
 
+#if VC_NEON
+VC_INLINE vf vsqrt(vf a) { return {vsqrtq_f32(a.v)}; }
+// x = m 2^e with m in [1, 2), for x > 0 (normal)
+VC_INLINE void vsplit(vf x, vf& e, vf& m) {
+    const int32x4_t b = vreinterpretq_s32_f32(x.v);
+    e.v = vcvtq_f32_s32(vsubq_s32(vshrq_n_s32(b, 23), vdupq_n_s32(127)));
+    m.v = vreinterpretq_f32_s32(vorrq_s32(vandq_s32(b, vdupq_n_s32(0x7fffff)), vdupq_n_s32(0x3f800000)));
+}
+#elif VC_SSE2
+VC_INLINE vf vsqrt(vf a) { return {_mm_sqrt_ps(a.v)}; }
+VC_INLINE void vsplit(vf x, vf& e, vf& m) {
+    const __m128i b = _mm_castps_si128(x.v);
+    e.v = _mm_cvtepi32_ps(_mm_sub_epi32(_mm_srli_epi32(b, 23), _mm_set1_epi32(127)));
+    m.v = _mm_castsi128_ps(_mm_or_si128(_mm_and_si128(b, _mm_set1_epi32(0x7fffff)), _mm_set1_epi32(0x3f800000)));
+}
+#else
+VC_INLINE vf vsqrt(vf a) { return {std::sqrt(a.v)}; }
+VC_INLINE void vsplit(vf x, vf& e, vf& m) {
+    int32_t b; std::memcpy(&b, &x.v, 4);
+    e.v = float((b >> 23) - 127); b = (b & 0x7fffff) | 0x3f800000; std::memcpy(&m.v, &b, 4);
+}
+#endif
+
 // 2^x, x clamped to +-30 (degree-5 polynomial on the fraction: 1.6e-4 relative, 0.3 cent). Control rate.
 VC_INLINE vf exp2v(vf x) {
     x = vmax(vmin(x, splat(30.f)), splat(-30.f));
@@ -140,6 +163,32 @@ VC_INLINE vf tanv(vf x) {
     vf num = x * fma(x2, fma(x2, splat(1.f), splat(-105.f)), splat(945.f));
     vf den = fma(x2, fma(x2, splat(15.f), splat(-420.f)), splat(945.f));
     return num / den;
+}
+
+// log2(x) for x > 0 normal (degree-6 polynomial on the mantissa, 4e-6). Control rate.
+VC_INLINE vf log2v(vf x) {
+    vf e, m; vsplit(x, e, m);
+    const vf t = m - splat(1.f);
+    vf p = fma(t, splat(-0.0260663f), splat(0.12191414f));
+    p = fma(p, t, splat(-0.27736505f));
+    p = fma(p, t, splat(0.45689417f));
+    p = fma(p, t, splat(-0.71789838f));
+    p = fma(p, t, splat(1.44251703f));
+    return fma(p, t, e);
+}
+// acos(x), |x| <= 1 (Abramowitz-Stegun 4.4.45: 7e-5 rad). Control rate.
+VC_INLINE vf acosv(vf x) {
+    const vf a = vabs(x);
+    vf p = fma(a, splat(-0.0187293f), splat(0.0742610f));
+    p = fma(p, a, splat(-0.2121144f));
+    p = fma(p, a, splat(1.5707288f));
+    p = p * vsqrt(vmax(splat(1.f) - a, splat(0.f)));
+    return sel(x < splat(0.f), splat(3.14159265f) - p, p);
+}
+// cos(x) for 0 <= x <= pi: sin(pi/2 - x) by its odd polynomial (9e-5 absolute, exact in its leading term). Control rate.
+VC_INLINE vf cosv(vf x) {
+    const vf y = splat(1.5707963f) - x, y2 = y * y;
+    return y * fma(y2, fma(y2, fma(y2, splat(-1.9515296e-4f), splat(8.3321608e-3f)), splat(-0.16666654f)), splat(1.f));
 }
 
 }  // namespace vcore

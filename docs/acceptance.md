@@ -23,6 +23,43 @@ note-off, not the reference).
 Rerun at commit 343b748 (the filter sections' per-sample normalisers): every row of the table below came out as
 before within its printed precision (measurement run va-round2 (2026-11-14), analysis accept-probeA-343b748.txt).
 
+**Rerun in round 5** (the reference's filter structure and the dense cutoff law; measurement run va-round5, analysis
+accept-probeA-round5; the same analysis and reference takes as round 4, 24 engine seeds a key). Changed rows, reference against engine:
+
+| quantity | key | reference | engine | difference | tolerance | result |
+|---|---|---|---|---|---|---|
+| filter cutoff, hold | 84 / 88 / 90 / 91 / 96 | 652 / 652 / 658 / 635 / 657 Hz | 655 / 655 / 652 / 651 / 651 | +0.09 / +0.07 / -0.17 / +0.43 / -0.17 semitone | 0.5 semitone | pass (key 91 too) |
+| filter cutoff, after release | 84 / 88 / 90 / 91 / 96 | 587 / 582 / 586 / 569 / 586 Hz | 589 / 581 / 579 / 578 / 574 | +0.05 / -0.00 / -0.19 / +0.28 / -0.35 | 0.5 semitone | pass |
+| even harmonics h4-h12 re h2 | 84 / 88 / 90 / 96 | | 0.0 to +0.4 / +0.1 to +0.2 / -0.4 to -0.3 / -0.4 dB | | 2 dB | pass |
+| | 91 | | +0.9 to +1.1 dB | | 2 dB | pass |
+| level, mean power | 84 / 88 / 90 / 91 / 96 | | -0.8 / +0.8 / -0.5 / **+1.8** / -1.1 dB | | 1.5 dB | pass, FAIL at 91 |
+| release rate (-20 to -60 dB) | all five | 84.2-85.6 dB/s | 82.9-83.1 | -1.8 to -3.1 % | 5 % | pass |
+
+The calibration constant rose by 0.65 dB: the core now applies filter 2's HPF24 (at cutoff 0 a pass-band gain of -0.65 dB, va-round5
+F3), which the earlier calibration on probe A had absorbed. Attack, decay, voice end and pitch rows are as in round 4 within their
+printed precision.
+
+# Acceptance: the filters against the reference (round 5)
+
+Probes: measurement run va-round5, batches F1-F3 (a saw at key 36, 16' (32.7 Hz) or 64' (8.2 Hz), drift 0, held 1.6 s through one
+filter, the other thru; the same saw through thru; each harmonic's level against thru over 1 s is the response); F2 (key follow at
+keys 36-96 and velocity at five velocities, key 60). The engine rendered the same patches (`vcbench render`, 44.1 kHz) through the
+same analysis (`analysis/eng.py`).
+
+| quantity | probes | engine against the reference | tolerance | result |
+|---|---|---|---|---|
+| LPF24 / LPF18 / LPF12 / LPF6 at their knots (540, 600, 660, 720, 840, 900) | 9 | 0.002-0.020 dB RMS, at most 0.03 dB | 0.3 dB | pass |
+| the same between knots (780) | 3 | 0.04-0.07 dB RMS, at most 0.1 | 0.3 dB | pass |
+| HPF24 (filters 1 and 2), HPF18, HPF12, HPF6 | 5 | within 0.03 dB | 0.3 dB | pass |
+| resonance: LPF24 at 600 / 128 and 780 / 64, LPF12 at 600 / 128 | 3 | 0.02 / 0.10 / 0.01 dB RMS (at most 0.14) | 0.3 dB | pass |
+| key follow 4 at key 84, 2 at key 36 | 2 | within 0.01 dB | 0.3 dB | pass |
+| cutoff velocity sensitivity 384 / v32, 192 / v96 | 2 | within 0.75 / 1.34 dB | 1.5 dB | pass |
+| EG depth velocity sensitivity 511 / v64, 384 / v1 | 2 | within 0.03 / 0.09 dB | 0.5 dB | pass |
+| the same at 48 kHz (poles mapped) | 9 | within 0.3 dB to cutoff 840; LPF24 at 900 0.54 dB RMS, 0.81 max | | informative: a known difference |
+| the same at 96 kHz | 9 | 0.2-0.8 dB RMS at cutoffs from 720 (2.2 dB max at LPF24 900) | | informative: a known difference |
+
+The resonance law's misfits (resonance over 32 at cutoffs over 2.1 kHz, `docs/coverage.md`) are reported by `vcore::notCovered`.
+
 **Rerun in round 4** (the saw-ladder cutoff law and the part's filter offsets; measurement run va-round4, analysis
 accept-probeA-item0). The hold-to-release step was the performance's own offsets: its common block holds FEG Depth 65 and
 Cutoff Frequency 63, which act as the part's offsets (va-round4 K2: a plain saw inside that performance steps from hold to

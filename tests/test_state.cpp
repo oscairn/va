@@ -6,7 +6,7 @@
 TEST(parameter_metadata) {
     Inst a(false);
     const uint32_t n = a.params->count(a.p);
-    CHECK_EQ(n, 28u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 14 destinations (ids 0-27, docs/parameters.md)
+    CHECK_EQ(n, 31u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 17 destinations (ids 0-30, docs/parameters.md)
     std::vector<clap_id> seen;
     for (uint32_t i = 0; i < n; ++i) {
         clap_param_info_t info{};

@@ -6,9 +6,9 @@ for macOS, Linux and Windows.
 Licence: GNU Affero General Public License v3.0 or later (`LICENSE`); the vendored headers under `third_party/` keep their own licences (MIT; `CREDITS.md`).
 
 Status: the DSP core (`core/`, a plain C++ library) plays patches of the reference analog model's
-"probe A" class: two oscillators (saw, pulse), the 24 dB low-pass, the high-pass at its transparent
-setting, the filter and amplitude envelopes with their measured laws, knob controller boxes on the
-filter envelope. A patch is the model's own raw parameter values (`core/params.inc`); what the core
+"probe A" class and beyond: three oscillators, both filters with the reference's low-pass and high-pass
+types (the band-passes not yet), key follow and velocity on the filters, the filter and amplitude
+envelopes with their measured laws, the LFOs, portamento and controller boxes. A patch is the model's own raw parameter values (`core/params.inc`); what the core
 does not cover is reported, not approximated (`docs/coverage.md`). How it compares with the
 reference: `docs/acceptance.md`; cost: `docs/cost.md`; design: `docs/design.md`. The shell does
 CLAP, parameters and state, and the Oscairn instrument contract (`oscairn.sound-contexts`,

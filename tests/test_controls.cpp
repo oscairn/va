@@ -6,8 +6,8 @@
 #include "host.h"
 
 namespace {
-// A saw through LPF24 at 500, one voice: a box on the cutoff (destination 142) moves it audibly.
-const std::string kBase = "VoltageDrift=0 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Filter1FilterCutoff=500 Filter1FilterResonance=0 "
+// A saw through LPF24 at 500, one voice, filter 2 thru (a box on 142 would move it too): a box on the cutoff moves it audibly.
+const std::string kBase = "VoltageDrift=0 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Filter1FilterCutoff=500 Filter1FilterResonance=0 Filter2FilterType=0 "
                           "AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 PartReceivePitchBend=0 ";  // the bend only as a box source
 std::string box(int source, int ratio = 136) {
     return " Box1ControllerSetSwitch=1 Box1ControllerSetSource=" + std::to_string(source) +

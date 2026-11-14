@@ -96,22 +96,25 @@ static void testCoverage() {
     p.set(PitchLFOSpeed, 330);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == PitchLFOSpeed);  // audio rate: not built
     p = plain(); p.set(Box1ControllerSetRatio, 0); p.set(Box1ControllerSetPolarity, 0); p.set(PartAssignableKnob1Value, 1023);
-    CHECK(notCovered(p, g, 64) == 2 && g[0].param == Box1ControllerSetDestination);  // also filter 2's depth (a transparent HPF24) moves
+    // the depth with its boxes under 96 (-192 steps), on filter 1 and on filter 2 (its box switch is on)
+    CHECK(notCovered(p, g, 64) == 2 && g[0].param == Filter1FilterCutoffEGDepth && g[1].param == Filter2FilterCutoffEGDepth);
     p.set(Filter2FilterControllerBox1Switch, 0);
-    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterCutoffEGDepth);  // the depth with its boxes under 96 (-192 steps)
-    p.set(Box1ControllerSetRatio, 255);
-    CHECK(notCovered(p, g, 64) == 0);  // past +192 steps it stops at 448, as the reference
+    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterCutoffEGDepth);
+    p.set(Box1ControllerSetRatio, 255);  // past +192 steps it stops at 448, as the reference; the EG's peak then takes resonance 50 to the top
+    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterResonance);
+    p.set(Filter1FilterResonance, 32);
+    CHECK(notCovered(p, g, 64) == 0);
     p = plain(); p.set(Filter1FilterCutoffLFODepth, 280); p.set(FilterCutoffLFOWave, 3);
     CHECK(notCovered(p, g, 64) == 0 && describe(p).lfo[1]);  // the filter LFO: depth verified to 40 steps
     p.set(Filter1FilterCutoffLFODepth, 300);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterCutoffLFODepth);
     p = plain(); p.set(VoltageDrift, 65);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == VoltageDrift);
-    // live sources: a mod wheel box on the cutoff reaches the whole box range (-24: 620 down to 236, under the cutoff law's
-    // 300); aftertouch's map is not measured; an unmeasured curve is reported
+    // live sources: a mod wheel box on the cutoff reaches the whole box range (-24: 620 down to 236; the cutoff law is measured
+    // 0-1023); aftertouch's map is not measured; an unmeasured curve is reported
     p = plain(); p.set(Box3ControllerSetSwitch, 1); p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetPolarity, 0); p.set(Box3ControllerSetRatio, 104);
     p.set(Filter2FilterControllerBox3Switch, 0); p.set(Filter1FilterResonance, 0);
-    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterCutoff);
+    CHECK(notCovered(p, g, 64) == 0);
     p.set(Box3ControllerSetRatio, 136);  // +8: 620 to 747
     CHECK(notCovered(p, g, 64) == 0);
     p.set(Box3ControllerSetSource, 2);
@@ -122,7 +125,7 @@ static void testCoverage() {
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetDestination);
     CHECK(keySounds(probeA(), 84, 100) && keySounds(probeA(), 96, 1) && !keySounds(probeA(), 60, 100) && !keySounds(probeA(), 97, 100));
     const PlanDesc d = describe(probeA());
-    CHECK(d.osc[0] == Wave::Saw && d.osc[1] == Wave::Saw && d.osc[2] == Wave::Off && d.lowPass && !d.highPass && d.count == 4);  // the square of width 0.5: a table
+    CHECK(d.osc[0] == Wave::Saw && d.osc[1] == Wave::Saw && d.osc[2] == Wave::Off && d.filter[0] == 1 && d.filter[1] == 5 && d.count == 5);  // the square of width 0.5: a table
     CHECK(estimateCost(d).voiceBlock > 5000 && estimateCost(d).voiceBlock < 15000 && estimateCost(d).rest < 4000);
 }
 
@@ -179,7 +182,76 @@ static void testCutoffAgainstReference() {
     auto core = std::make_unique<Core>(); core->prepare(48000);
     Sound s; Patch p;
     core->compile(s, p);
-    CHECK(p[Filter1FilterCutoff] == 1023 && std::exp2(s.lpSemi / 12) > 15000);  // the default is open
+    CHECK(p[Filter1FilterCutoff] == 1023 && std::exp2(s.flt[0].cut / 12) > 20000);  // the default is open
+}
+
+// The filter types against the reference (va-round5 F1): a saw of 32.7 Hz (key 36, 16') held through one filter, each harmonic's
+// level re the same saw through thru (dB), at harmonics 1, 2, 4, ... 512; the engine renders the same at 44.1 kHz. The earlier
+// engine had no LPF18 / LPF12 / LPF6 (thru), its LPF24 law was 2-4 dB off at 840-900 and its HPF24 a fixed stand-in.
+static void filterResponse(const char* extra, const int* K, int n, double* out, int key = 36, int octave = 2, int vel = 100) {
+    double ref[16], h[16];
+    auto run = [&](const char* x, double* r) {
+        std::string t = std::string("vcore-patch/1 VoltageDrift=0 AmplitudeEGAttackTime=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 "
+                                    "FilterCutoffEGAttackTime=0 FilterCutoffEGDecayTime=255 FilterCutoffEGSustainLevel=511 Osc1OscillatorWave=0 "
+                                    "Osc1OscillatorOutLevel=511 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 "
+                                    "Filter1FilterType=0 Filter2FilterType=0 Osc1OscillatorOctave=") + std::to_string(octave) + " " + x;
+        Patch p; char e[200]; if (!readPatch(t.c_str(), p, e, sizeof e)) { std::printf("filter: %s\n", e); ++failures; return; }
+        auto core = std::make_unique<Core>(); core->prepare(44100); core->load(0, p); core->setGain(0, 1, 0); core->noteOn(0, 0, 0, key, float(vel) / 127);
+        std::vector<float> L(66150), R(L.size()); core->render(L.data(), R.data(), uint32_t(L.size()));
+        const double f0 = 440 * std::exp2((key - 69) / 12.0 + octave - 3) / 44100, pi = 3.14159265358979;
+        for (int k = 0; k < n; ++k) {
+            double re = 0, im = 0;
+            for (size_t i = 0; i < 44100; ++i) { const double w = 0.5 - 0.5 * std::cos(2 * pi * double(i) / 44100), ph = 2 * pi * K[k] * f0 * double(22050 + i);
+                re += L[22050 + i] * w * std::cos(ph); im += L[22050 + i] * w * std::sin(ph); }
+            r[k] = 10 * std::log10(re * re + im * im + 1e-30);
+        }
+    };
+    run("", ref); run(extra, h);
+    for (int k = 0; k < n; ++k) out[k] = h[k] - ref[k];
+}
+static void testFilterTypes() {
+    static const int K[] = {1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512};
+    static const float kLp18c660[] = {-0.03f, -0.10f, -0.40f, -1.49f, -5.02f, -9.21f, -13.35f, -20.74f, -26.84f, -36.20f, -43.11f, -52.89f, -59.59f, -68.06f, -72.64f};
+    static const float kLp12c840[] = {-0.01f, -0.01f, -0.03f, -0.10f, -0.38f, -0.82f, -1.36f, -2.63f, -3.96f, -6.48f, -8.65f, -12.15f, -14.87f, -18.71f, -20.97f};
+    static const float kLp24c900[] = {-0.00f, -0.01f, -0.01f, -0.03f, -0.10f, -0.21f, -0.36f, -0.76f, -1.25f, -2.41f, -3.86f, -7.95f, -12.70f, -19.82f, -23.49f};
+    static const float kLp6c720[] = {-0.01f, -0.01f, -0.04f, -0.17f, -0.62f, -1.28f, -2.06f, -3.73f, -5.33f, -8.04f, -10.18f, -13.31f, -15.50f, -18.29f, -19.79f};
+    static const float kHp24c600[] = {-98.50f, -74.50f, -50.72f, -27.79f, -11.01f, -8.15f, -7.37f, -6.81f, -6.60f, -6.45f, -6.39f, -6.35f, -6.34f, -6.33f, -6.32f};
+    static const float kLp24c780r64[] = {-3.74f, -3.73f, -3.70f, -3.57f, -3.05f, -2.19f, -1.04f, 1.68f, 1.56f, -12.75f, -24.36f, -39.28f, -48.89f, -60.68f, -66.88f};
+    static const float kLp12c600r128[] = {-5.77f, -5.63f, -5.09f, -2.47f, 3.95f, -11.47f, -18.22f, -26.31f, -31.63f, -38.83f, -43.80f, -50.58f, -55.15f, -60.88f, -63.94f};
+    const struct { const char* extra; const float* ref; } cases[] = {
+        {"Filter1FilterType=2 Filter1FilterCutoff=660", kLp18c660}, {"Filter1FilterType=3 Filter1FilterCutoff=840", kLp12c840},
+        {"Filter1FilterType=1 Filter1FilterCutoff=900", kLp24c900}, {"Filter1FilterType=4 Filter1FilterCutoff=720", kLp6c720},
+        {"Filter2FilterType=5 Filter2FilterCutoff=600", kHp24c600}, {"Filter1FilterType=1 Filter1FilterCutoff=780 Filter1FilterResonance=64", kLp24c780r64},
+        {"Filter1FilterType=3 Filter1FilterCutoff=600 Filter1FilterResonance=128", kLp12c600r128}};
+    for (const auto& c : cases) {
+        double d[15], worst = 0;
+        filterResponse(c.extra, K, 15, d);
+        for (int k = 0; k < 15; ++k) if (c.ref[k] > -70) worst = std::fmax(worst, std::fabs(d[k] - c.ref[k]));
+        std::printf("filter against the reference, %s: worst harmonic %.2f dB\n", c.extra, worst);
+        CHECK(worst < 0.3);
+    }
+    // key follow and velocity (F2: LPF24, an 8.2 Hz-based saw (64') at the key, against thru at the same key and velocity)
+    static const int K2[] = {1, 2, 4, 8, 16, 32, 48, 64, 96, 128};
+    static const float kKf4k84[] = {-0.02f, -0.05f, -0.20f, -0.73f, -2.30f, -7.07f, -14.24f, -20.58f, -28.95f, -33.40f};
+    static const float kKf2k36[] = {-0.00f, -0.01f, -0.03f, -0.08f, -0.30f, -1.11f, -2.56f, -5.37f, -14.39f, -23.09f};
+    static const float kCv384v32[] = {-1.81f, -11.58f, -33.30f, -56.90f, -80.90f, -103.98f, -121.30f, -132.76f, -123.30f, -127.11f};
+    static const float kCv192v96[] = {-0.10f, -0.39f, -1.50f, -9.02f, -29.73f, -53.13f, -67.07f, -77.02f, -90.87f, -100.78f};
+    static const float kEv511v64[] = {-0.02f, -0.07f, -0.25f, -0.92f, -4.06f, -19.74f, -32.72f, -42.27f, -55.90f, -65.56f};
+    static const float kEv384v1[] = {-0.02f, -0.07f, -0.28f, -1.02f, -4.71f, -21.54f, -34.65f, -44.24f, -57.91f, -67.58f};
+    const struct { const char* extra; int key, vel; const float* ref; double tol; } cases2[] = {
+        {"Filter1FilterType=1 Filter1FilterCutoff=700 Filter1FilterCutoffKeyFollow=4", 84, 100, kKf4k84, 0.3},
+        {"Filter1FilterType=1 Filter1FilterCutoff=700 Filter1FilterCutoffKeyFollow=2", 36, 100, kKf2k36, 0.3},
+        {"Filter1FilterType=1 Filter1FilterCutoff=700 Filter1FilterCutoffVelocitySensitivity=384", 60, 32, kCv384v32, 1.5},
+        {"Filter1FilterType=1 Filter1FilterCutoff=700 Filter1FilterCutoffVelocitySensitivity=192", 60, 96, kCv192v96, 1.5},
+        {"Filter1FilterType=1 Filter1FilterCutoff=540 Filter1FilterCutoffEGDepth=300 Filter1FilterCutoffEGDepthVelocitySensitivity=511", 60, 64, kEv511v64, 0.5},
+        {"Filter1FilterType=1 Filter1FilterCutoff=540 Filter1FilterCutoffEGDepth=300 Filter1FilterCutoffEGDepthVelocitySensitivity=384", 60, 1, kEv384v1, 0.5}};
+    for (const auto& c : cases2) {
+        double d[10], worst = 0;
+        filterResponse(c.extra, K2, 10, d, c.key, 0, c.vel);
+        for (int k = 0; k < 10; ++k) if (c.ref[k] > -70) worst = std::fmax(worst, std::fabs(d[k] - c.ref[k]));
+        std::printf("filter against the reference, %s at key %d velocity %d: worst harmonic %.2f dB\n", c.extra, c.key, c.vel, worst);
+        CHECK(worst < c.tol);
+    }
 }
 
 // Energy off the harmonics of one oscillator alone (filters thru, drift 0) at 44.1 kHz, dB re the total:
@@ -239,7 +311,8 @@ static void testVoiceLifetime() {
     core->noteOn(3, 0, 0, 84, 1.f);  // starts on frame 37 exactly
     core->render(&l[37], &r[37], 48000 - 37);  // one second: the amplitude EG reaches its sustain (140/511)
     bool silentBefore = true; for (int i = 0; i < 37; ++i) silentBefore &= l[size_t(i)] == 0.f;
-    CHECK(silentBefore && l[38] != 0.f);
+    bool soundsAt = false; for (int i = 38; i < 44; ++i) soundsAt |= l[size_t(i)] != 0.f;  // the filters' sections delay a sample each
+    CHECK(silentBefore && soundsAt);
     CHECK(core->voice(3).sounding && !core->voice(3).releasing && core->voiceCount() == 1);
     core->noteOff(3);
     CHECK(core->voice(3).releasing);
@@ -364,14 +437,14 @@ static void testBoxLaw() {
     CHECK(hi > 10 * lo);
 }
 
-// The filter EG depth: 0.5025 semitone a step from 256, a true zero at 256 (the earlier law put 1.4 semitones there).
+// The filter EG depth: a true zero at 256 (the earlier law put 1.4 semitones there), 0.5 semitone of the cutoff a step.
 static void testFegDepthZero() {
     auto core = std::make_unique<Core>(); core->prepare(48000);
     Sound s; Patch p;
     p.set(Filter1FilterCutoffEGDepth, 256); core->compile(s, p);
-    CHECK(s.fegSemis == 0.f);
+    CHECK(s.flt[0].feg == 0.f);
     p.set(Filter1FilterCutoffEGDepth, 352); core->compile(s, p);
-    CHECK(std::fabs(s.fegSemis - 48.24) < 0.01);
+    CHECK(std::fabs(s.flt[0].feg - 48.f) < 0.01);  // 0.5 semitone a step (va-round5 F2)
 }
 
 // The filter EG's decay and release past 208 (va-round3 R2: 220 / 232 / 244 / 255 -> 2.61 / 4.28 / 7.24 / 12.15 s, one law for
@@ -584,7 +657,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

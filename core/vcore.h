@@ -47,20 +47,21 @@ uint32_t notCovered(const Patch&, Gap* out, uint32_t cap);
 bool keySounds(const Patch&, int key, int velocity);
 
 // ---- the plan ----------------------------------------------------------------------------------
-enum class Stage : uint8_t { Saw1, Pulse1, Saw2, Pulse2, LowPass24, HighPass24, Amp, Table3 };
+enum class Stage : uint8_t { Saw1, Pulse1, Saw2, Pulse2, Filter1, Filter2, Amp, Table3 };
 // Saw: one band-limited table read (any wave the tables hold: saw, saw 2, triangle, sine, the square of width 0.5);
 // Pulse: two reads of the saw tables (any other width, or a width the oscillator's LFO moves).
 enum class Wave : uint8_t { Off, Saw, Pulse };
 struct PlanDesc {
     Wave osc[3];             // oscillator 3: Off or Saw only
     bool oscLfo[2];          // oscillators 1-2: their own LFO moves the pulse width
-    bool lowPass, highPass;  // filter 1 low-pass 24 dB; filter 2 high-pass 24 dB (absent: thru)
+    uint8_t filter[2];       // each filter's type (Filter1FilterType's numbers; 0 thru: no stage; the band-passes are not built)
     bool lfo[3];             // the pitch, filter and amplitude LFOs (control rate; absent: not computed)
     uint8_t boxes;           // controller boxes switched on (control rate, once per sound)
     uint8_t count;           // the stages in signal order
     Stage stage[7];
 };
 PlanDesc describe(const Patch&);
+bool highPassAsGain(const Patch&);  // filter 2 left out of the plan, its pass-band gain applied to the level
 // Estimated cost, in instructions (aarch64, -O3, measured; docs/cost.md): one voice for one 128-frame
 // block, and the sound's share of a block with no voice sounding.
 struct Cost { double voiceBlock, rest; };

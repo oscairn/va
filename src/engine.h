@@ -36,7 +36,8 @@ inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination p
     vcore::Osc1OscillatorPitchLFODepth, vcore::Osc2OscillatorPitchLFODepth, vcore::Osc1OscillatorOutLevel, vcore::Osc2OscillatorOutLevel,
     vcore::Filter1FilterCutoff, vcore::Filter1FilterCutoffEGDepth, vcore::Filter1FilterResonance, vcore::FilterCutoffEGAttackTime,
     vcore::FilterCutoffEGDecayTime, vcore::FilterCutoffEGReleaseTime, vcore::AmplitudeEGAttackTime, vcore::AmplitudeEGDecayTime,
-    vcore::AmplitudeEGReleaseTime, vcore::Osc3OscillatorPitchLFODepth};
+    vcore::AmplitudeEGReleaseTime, vcore::Osc3OscillatorPitchLFODepth, vcore::Filter2FilterCutoff, vcore::Filter2FilterCutoffEGDepth,
+    vcore::Filter2FilterResonance};
 inline constexpr double kKnobDefault = 512.0 / 1023;  // the model's default knob value
 inline constexpr ParamInfo kParams[] = {
     {"Level", "level", 0, 1, 1, false}, {"Pan", "pan", -1, 1, 0, false}, {"Polyphony Limit", "polyphony", 1, kVoices, kVoices, true},
@@ -49,7 +50,8 @@ inline constexpr ParamInfo kParams[] = {
     {"Osc 1 Level", "", 0, 511, 511, false}, {"Osc 2 Level", "", 0, 511, 0, false}, {"Cutoff", "", 0, 1023, 1023, false},
     {"Filter EG Depth", "", 64, 448, 256, false}, {"Resonance", "", 0, 255, 0, false}, {"Filter EG Attack", "", 0, 255, 0, false},
     {"Filter EG Decay", "", 0, 255, 160, false}, {"Filter EG Release", "", 0, 255, 160, false}, {"Amp EG Attack", "", 0, 255, 0, false},
-    {"Amp EG Decay", "", 0, 255, 115, false}, {"Amp EG Release", "", 0, 255, 160, false}, {"Osc 3 Pitch LFO Depth", "", 0, 494, 247, false}};
+    {"Amp EG Decay", "", 0, 255, 115, false}, {"Amp EG Release", "", 0, 255, 160, false}, {"Osc 3 Pitch LFO Depth", "", 0, 494, 247, false},
+    {"Filter 2 Cutoff", "", 0, 1023, 0, false}, {"Filter 2 EG Depth", "", 64, 448, 256, false}, {"Filter 2 Resonance", "", 0, 255, 0, false}};
 static_assert(sizeof kParams / sizeof kParams[0] == kParamCount, "one entry a parameter");
 
 // A float that can be copied (a Patch is copied) and read by one thread while another writes it.

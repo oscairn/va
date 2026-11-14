@@ -34,7 +34,7 @@ struct Lfo {
 
 // Controller box destinations the core moves (an oscillator's own destination is one entry per oscillator).
 enum Dest : uint8_t { DPitchDepth1, DPitchDepth2, DOscLevel1, DOscLevel2, DCutoff, DFegDepth, DReso, DFegAttack, DFegDecay,
-                      DFegRelease, DAmpAttack, DAmpDecay, DAmpRelease, DPitchDepth3, kDests };
+                      DFegRelease, DAmpAttack, DAmpDecay, DAmpRelease, DPitchDepth3, DCutoff2, DFegDepth2, DReso2, kDests };
 // Box sources: the reference's numbers 0-17 (0 pitch bend, 1 mod wheel, 2 aftertouch, 3-4 foot controllers, 5 foot switch,
 // 6 ribbon, 7 breath, 8-15 knobs 1-8, 16-17 switches 1-2); a channel keeps kSources values.
 constexpr int kSources = 18;
@@ -51,9 +51,15 @@ extern const float kCurveS[17];
 int findCurve(int bank, int type, int p1, int p2);  // -1: not measured
 float curveAt(int id, float s);
 // The laws at every raw value, built once per process (laws.cpp): the boxes look them up at control rate.
-constexpr float kFegSemisPerStep = 0.5025f;  // filter EG depth: semitones a raw step (laws.cpp)
+constexpr float kFegSemisPerStep = 0.5f;  // filter EG depth: semitones of the cutoff a step (laws.cpp)
 enum TauKind { TAttack, TAmpDecay, TAmpRelease, TFegDecay, TFegRelease, kTaus };
-struct LawTables { float cutSemi[1024], pitchSemi[495], oscLevel[512], k1[256], k2[256], gain[256], invTau[kTaus][256]; };
+// The filters (laws.cpp): cutSemi is the log of the reference's cutoff frequency fc (semitones re 1 Hz) at every raw cutoff;
+// hpGain the high-passes' (HPF24, 18, 12, 6) output gain at whole semitones of fc from 1 Hz; resGain
+// the pass-band gain of each resonance value. kTopSemi: 22050 Hz.
+constexpr int kHpN = 182;
+constexpr float kTopSemi = 173.2756f;
+constexpr int kFilterTypes = 9;  // thru, LPF24, LPF18, LPF12, LPF6, HPF24, HPF18, HPF12, HPF6 (the band-passes are not built)
+struct LawTables { float cutSemi[1024], hpGain[4][kHpN], pitchSemi[495], oscLevel[512], resGain[256], invTau[kTaus][256]; };
 const LawTables& lawTables();
 
 struct Kernel;  // core.cpp
@@ -81,10 +87,15 @@ struct Sound {
     // random movement driftAmp x r(t), r linear between uniform values in [-1, 1] drawn every driftPeriod frames.
     float driftMean = 0, driftStatic = 0, driftAmp = 0, driftRate = 0;  // driftRate: knots per frame
     float driftCutMean = 0, driftCutSpread = 0;                          // cutoff: static per voice (semitones)
-    float lpSemi = 0, lpK1 = 1, lpK2 = 1, lpGain = 1;  // cutoff (semitones re 1 Hz), 1/Q of each section, pass-band gain
-    float lpTop = 0;                                   // the highest cutoff (semitones re 1 Hz): the law at raw 1023
-    float hpSemi = 0;                                  // high-pass cutoff (Butterworth pair)
-    float fegSemis = 0;     // filter EG: cutoff move at EG level 1, semitones (without the boxes)
+    // Filters 1 and 2 (laws.cpp): the type, the cutoff (semitones re 1 Hz of the reference's fc), the filter EG's move at EG level 1
+    // (semitones), the resonance (raw), key follow (semitones a key from key 60), and the velocity's laws (cutoff semitones x 8, EG
+    // depth factor x 128, resonance steps at each velocity 0..127). The cutoff, EG depth and resonance are box destinations.
+    struct Filter { uint8_t type = 0; float cut = 0, feg = 0, res = 0, keyFollow = 0; };
+    Filter flt[2];
+    int16_t velCut[2][128] = {};
+    int8_t velRes[2][128] = {};
+    uint8_t velFeg[2][128] = {};  // the EG depth factor x 128
+    float rateRatio = 1;    // 44100 / the prepared rate: the filters' poles are the reference's at 44.1 kHz (1: no mapping)
     int16_t cutOffset = 0;  // the part's cutoff offset in raw steps (a destination value set from outside gets it too)
     float fegOffSteps = 0;  // the part's FEG Depth offset in depth steps (added before the depth's stop, also under the boxes)
     // Controller boxes (laws.cpp boxRaw): a box's output is (c + off - 1024) x ratio / 8 within +-8192, c its curve at the
@@ -115,12 +126,12 @@ void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, c
 enum Field {
     PH1, PH2, PH3, INC1, DINC1, INC2, DINC2, INC3, DINC3, TA1, TB1, TW1, DTW1, TA2, TB2, TW2, DTW2, TA3, TB3, TW3, DTW3,
     PW1, DPW1, PW2, DPW2, LO1, LO2, LOR1, LOR2,
-    L1, L2, L3, L4, LG, DLG,
-    H1, H2, H3, H4, HG, DHG,
+    L1, L2, L3, L4, LF, DLF, LQA, DLQA, LQB, DLQB, LFB, DLFB,
+    H1, H2, H3, H4, HF, DHF, HQA, DHQA, HQB, DHQB, HFB, DHFB,
     GL, DGL, GR, DGR,
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
-    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, VOL, FADE, DFADE, FRESH,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH,
     NFIELDS
 };
 constexpr int kStageAttack = 0, kStageDecay = 1, kStageRelease = 2;

@@ -22,7 +22,8 @@ float at(const Law& l, float x) {
 
 // Calibration: the output level of this core against the reference's, one constant (dB), fitted on
 // probe A's sustained second harmonic at three keys and velocities (docs/coverage.md).
-constexpr double kCalibrationDb = -15.96;
+// Round 5: +0.65 dB, the pass-band gain of filter 2's HPF24 at cutoff 0 (probe A has it; the core applies it since round 5).
+constexpr double kCalibrationDb = -15.96 + 0.65;
 
 // Release laws (measured on sine probes at release 160 with sustain 140-511, on probe A, and at
 // release 145 on 78 notes of 0.005-1 s at sustains 140-511, decays 120-180 and attack 80): the law is
@@ -32,16 +33,16 @@ constexpr double kCalibrationDb = -15.96;
 constexpr double kReleaseThreshold = 0.443;  // between 0.437 (low law) and 0.449 (high law) at the note-off
 constexpr double kLowReleaseRate = 0.912, kEndHighDb = -53.0, kEndLowDb = -87.0;
 
-// Filter EG depth: 0.5025 semitone per raw step from 256, 256 a true zero (sustain 0 and 511 sound the same there),
-// depths 96-446 in three sets within 0.08-0.11 semitone RMS (conv-cutoff (2026-11-14)). The depth stops at +-192 steps
+// Filter EG depth: 0.5 semitone of fc a step from 256 (va-round5 F2: depth 300 at cutoff 540 sounds 22.05 semitones over the static
+// cutoff; on the earlier cutoff scale 0.5025, depths 96-446 within 0.08-0.11 semitone RMS, conv-cutoff), 256 a true zero (sustain
+// 0 and 511 sound the same there). The depth stops at +-192 steps
 // (va-round3 R1 G_*: a box driving it past 448 sounds as the static 448 within 0.01 dB).
-constexpr double kFegDepthPerStep = kFegSemisPerStep;
 // The part's filter offsets (0-127, 64 none; va-round4 K3: a saw at key 60 through LPF24, the EG at full sustain and released at
-// once). FEG Depth adds 1.60 semitones a unit to the EG's depth (56-72 within 0.04 semitone a unit; it scales with the EG
+// once). FEG Depth adds 3 depth steps a unit to the EG's depth (1.60 semitones a unit on the earlier cutoff scale, 56-72 within 0.04; it scales with the EG
 // level: none at sustain 0, K0), as depth steps before the depth's stop; Filter Cutoff Frequency adds 16 raw cutoff steps a unit
 // (60-72 at 636 and 72 at 450 land on the static ladder's Hz within 0.3 semitone; 96 opens the filter). The performance's own
 // offsets add to the part's unit for unit (K3: 72 + 72 sounds as 80): the converter folds them into these.
-constexpr double kPartFegStepsPerUnit = 1.60 / kFegDepthPerStep;
+constexpr double kPartFegStepsPerUnit = 3;  // 1.5 semitones a unit (round 5, the semitone scale of fc: K3's PartFEGDepth=72 within 0.05 dB RMS)
 constexpr int kPartCutoffPerUnit = 16;
 // Voltage drift (sines held 8 and 30 s, 4 voices a take; 16 short notes; noise through LPF24 at 636):
 // pitch = mean + static (uniform, sd as given) + amplitude x r(t), r linear between uniform knots in [-1, 1]
@@ -136,6 +137,38 @@ double portaRate(int t) {  // semitones a second
     return std::exp((1 - u) * std::log(double(kPortaRate[i - 1])) + u * std::log(double(kPortaRate[i])));
 }
 
+
+// ---- the filters ------------------------------------------------------------------------------------------------------------
+// va-round5 F1: every type is a cascade of the reference's sections (core.cpp filterRun, filterControl), read within 0.001 dB on a
+// 32.7 Hz saw's harmonics against thru. The cutoff law gives the reference's fc (Hz) at each raw value (F3: LPF12 every 8 raw
+// steps, its F and q fitted within 0.001 dB); a section's undamped coefficient is Ft = 2 sin(pi fc / 44100), its damping
+// q = 2^(1 - r / 32) at resonance r (r 64 / 128 / 192 / 255: 0.5 / 0.125 / 0.031 / 0.0079, within 1 %), F = Ft (1 - min(q, 1) Ft / 4)
+// (within 0.4 % at 600 / 780 / 900 over every resonance), q at most 3 - 2F (864-1023); a one-pole's c = 1 - e^(-2 pi fc / 44100)
+// (LPF6 and LPF18 at 540-960 within 0.3 %). The filter EG adds 0.5 semitone of fc a depth step (F2: depth 300 at 540 sounds at
+// 22.0 semitones over the static cutoff).
+#include "filters.inc"
+double filterFc(int c) {  // log-frequency between the knots
+    int i = 1; while (i < kFcN - 1 && c > kFcX[i]) ++i;
+    const double u = std::max(0.0, std::min(1.0, (c - kFcX[i - 1]) / double(kFcX[i] - kFcX[i - 1])));
+    return std::exp((1 - u) * std::log(double(kFcY[i - 1])) + u * std::log(double(kFcY[i])));
+}
+}  // namespace
+double cutoffHz(int raw) { return filterFc(std::max(0, std::min(1023, raw))); }
+namespace {
+void velocityLaws(Sound& s, int f, int cut, int feg, int res) {
+    for (int v = 0; v < 128; ++v) {
+        const float vc = float(cut < 0 ? 128 - v : v), vf = float(feg < 0 ? 128 - v : v);
+        const double c = std::abs(cut) * at(Law{kVelX, kVelCut, 5, 1, 127}, vc);
+        s.velCut[f][v] = int16_t(std::max(-1000.0, std::min(1000.0, std::round(c * 8))));
+        const double m = std::max(0.0, 1 + std::abs(feg) * double(at(Law{kVelFegX, kVelFeg, 3, 1, 127}, vf)));
+        s.velFeg[f][v] = uint8_t(std::min(255.0, std::round(m * 128)));
+        // resonance (F2: two velocities a sign): a positive sensitivity lowers it by up to half of it toward velocity 1, a negative one
+        // toward velocity 127, linearly between (not measured between)
+        const double rr = res > 0 ? -res / 2.0 * (127 - v) / 126.0 : res < 0 ? res / 2.0 * (v - 1) / 126.0 : 0;
+        s.velRes[f][v] = int8_t(std::max(-127.0, std::min(0.0, std::round(rr))));
+    }
+}
+
 double log2Coef(double tau, double sr) { return -1.0 / (tau * sr * std::log(2.0)); }  // per frame
 double attackTau(int raw) { return raw >= 100 ? at(kAmpAttack, float(raw)) : at(kShortAttack, float(raw < 96 ? raw : 96)); }
 
@@ -193,16 +226,6 @@ const float* bandTables() { static const bool built = buildTables(); (void)built
 
 // ---- laws at every raw value (control rate: the controller boxes move a destination's raw value) ------------------
 namespace {
-double cutoffSemi(int cut) {  // LPF24: log-frequency between the measured knots; under 300 the wide table joined there (not covered)
-    if (cut >= kLp24Cutoff.lo) {
-        int i = 1; while (i < kLp24Cutoff.n - 1 && cut > kLp24Cutoff.x[i]) ++i;
-        const double u = (cut - kLp24Cutoff.x[i - 1]) / double(kLp24Cutoff.x[i] - kLp24Cutoff.x[i - 1]);
-        return 12 * ((1 - u) * std::log2(double(kLp24Cutoff.y[i - 1])) + u * std::log2(double(kLp24Cutoff.y[i])));
-    }
-    return 12 * std::log2(double(at(kLp24Wide, float(cut))) * kLp24Cutoff.y[0] / double(at(kLp24Wide, float(kLp24Cutoff.lo))));
-}
-// steps from 256, within +-192 (the reference stops there: a box past it sounds as the static 448, va-round3 R1 G_*)
-double fegDepthSemi(double steps) { steps = std::max(-192.0, std::min(192.0, steps)); return kFegDepthPerStep * steps; }
 double pitchDepthSemi(int d) { return std::copysign(double(at(Law{kLfoDepthX, kLfoDepthY, kLfoDepthN, 0, 247}, float(std::abs(d)))), double(d)) / 100; }
 // Filter EG decay and release share one law (va-round3 R2 FD_/FR_: equal within 1 % at 176, 208, 232 and 255): the
 // generated tables to 208, then 220-255 fitted on the first 15-70 % of the segment (a saw through LPF24 read against a static
@@ -223,13 +246,13 @@ double ampReleaseTau(int raw) { return raw < 112 ? at(Law{kAmpRelLowX, kAmpRelLo
 
 static LawTables gLaw;
 static bool buildLaws() {
-    for (int i = 0; i < 1024; ++i) gLaw.cutSemi[i] = float(cutoffSemi(i));
+    for (int i = 0; i < 1024; ++i) gLaw.cutSemi[i] = float(12 * std::log2(filterFc(i)));
+    for (int k = 0; k < 4; ++k)
+        for (int i = 0; i < kHpN; ++i) gLaw.hpGain[k][i] = float(std::pow(10.0, at(Law{kHpTabX[k], kHpTabY[k], kHpTabN[k], 0, 0}, float(i)) / 20));
     for (int i = 0; i <= 494; ++i) gLaw.pitchSemi[i] = float(pitchDepthSemi(i - 247));
     for (int i = 0; i < 512; ++i) gLaw.oscLevel[i] = oscLevel(i);
     for (int i = 0; i < 256; ++i) {
-        gLaw.k1[i] = float(1 / std::exp2(double(at(kLp24Q1, float(i)))));
-        gLaw.k2[i] = float(1 / std::exp2(double(at(kLp24Q2, float(i)))));
-        gLaw.gain[i] = float(std::pow(10.0, at(kLp24Gain, float(i)) / 20));
+        gLaw.resGain[i] = float(std::pow(10.0, at(Law{kResGainX, kResGainY, kResGainN, 0, 255}, float(i)) / 20));
         gLaw.invTau[TAttack][i] = float(1 / attackTau(i));
         gLaw.invTau[TAmpDecay][i] = float(1 / at(kAmpDecay, float(i)));
         gLaw.invTau[TAmpRelease][i] = float(1 / ampReleaseTau(i));
@@ -271,7 +294,8 @@ float curveAt(int id, float s) {  // no libm: control rate
 // and decay (255)).
 const DestDef kDestDefs[kDests] = {
     {247, 0, 494}, {247, 0, 494}, {511, 0, 511}, {511, 0, 511}, {1023, 0, 1023}, {192, -192, 192}, {255, 0, 255},
-    {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {247, 0, 494}};
+    {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {247, 0, 494},
+    {1023, 0, 1023}, {192, -192, 192}, {255, 0, 255}};  // filter 2's cutoff, EG depth and resonance as filter 1's
 
 // The destinations' raw values with the boxes at these source values (src: s 0..1023 per source; knobs 0..1).
 void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, const int16_t* stored, const float* mod) {
@@ -343,19 +367,25 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.driftCutMean = 0; s.driftCutSpread = float(kDriftCutSpread64 * d / 64);
     }
 
-    // Filters. LPF24: cutoff in Hz by its law, two sections with resonance-dependent Q and pass-band gain.
+    // Filters (va-round5 F1-F3; filterFt and the laws above): the type (the band-passes are not built: thru, reported), the cutoff in
+    // raw steps (filter 1 with the part's offset), the EG's move in raw steps, the resonance, key follow.
+    s.rateRatio = float(44100.0 / sr);
     s.cutOffset = int16_t(kPartCutoffPerUnit * (q[PartFilterCutoffFrequency] - 64));
     const int cutoff = std::max(0, std::min(1023, q[Filter1FilterCutoff] + s.cutOffset));
-    s.lpSemi = float(cutoffSemi(cutoff));
-    s.lpTop = float(12 * std::log2(double(kLp24Cutoff.y[kLp24Cutoff.n - 1])));
-    const float res = float(q[Filter1FilterResonance]);
-    s.lpK1 = float(1 / std::exp2(double(at(kLp24Q1, res))));
-    s.lpK2 = float(1 / std::exp2(double(at(kLp24Q2, res))));
-    s.lpGain = float(std::pow(10.0, at(kLp24Gain, res) / 20));
-    // shortcut: HPF24 above raw 0 is not covered (reported); 30 Hz plus 0.15 semitone a step stands in
-    s.hpSemi = float(12 * std::log2(30.0) + 0.15 * q[Filter2FilterCutoff]);
     s.fegOffSteps = float(kPartFegStepsPerUnit * (q[PartFEGDepth] - 64));
-    s.fegSemis = float(fegDepthSemi(q[Filter1FilterCutoffEGDepth] - 256 + double(s.fegOffSteps)));
+    const int fstride = Filter2FilterType - Filter1FilterType;
+    for (int f = 0; f < 2; ++f) {
+        auto P = [&](Param p) { return q[Param(p + f * fstride)]; };
+        Sound::Filter& x = s.flt[f];
+        const int type = P(Filter1FilterType);
+        x.type = uint8_t(type < kFilterTypes ? type : 0);
+        x.cut = float(12 * std::log2(filterFc(f ? P(Filter1FilterCutoff) : cutoff)));
+        x.feg = float(kFegSemisPerStep * std::max(-192.0, std::min(192.0, P(Filter1FilterCutoffEGDepth) - 256 + (f ? 0.0 : double(s.fegOffSteps)))));
+        x.res = float(P(Filter1FilterResonance));
+        x.keyFollow = kKeyFollowSemis[std::min(5, P(Filter1FilterCutoffKeyFollow))];
+        velocityLaws(s, f, P(Filter1FilterCutoffVelocitySensitivity) - 256, P(Filter1FilterCutoffEGDepthVelocitySensitivity) - 256,
+                     P(Filter1FilterResonanceVelocitySensitivity) - 256);
+    }
 
     // Envelopes: one-pole segments; sustain = level / 511, linear.
     envelope(s.amp, attackTau(q[AmplitudeEGAttackTime]), at(kAmpDecay, float(q[AmplitudeEGDecayTime])), q[AmplitudeEGSustainLevel] / 511.0,
@@ -374,6 +404,8 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.stored[DOscLevel1] = int16_t(q[Param(l[0])]); s.stored[DOscLevel2] = int16_t(q[Param(l[1])]);
         s.stored[DCutoff] = int16_t(cutoff); s.stored[DFegDepth] = int16_t(q[Filter1FilterCutoffEGDepth] - 256);
         s.stored[DReso] = int16_t(q[Filter1FilterResonance]);
+        s.stored[DCutoff2] = int16_t(q[Filter2FilterCutoff]); s.stored[DFegDepth2] = int16_t(q[Filter2FilterCutoffEGDepth] - 256);
+        s.stored[DReso2] = int16_t(q[Filter2FilterResonance]);
         s.stored[DFegAttack] = int16_t(q[FilterCutoffEGAttackTime]); s.stored[DFegDecay] = int16_t(q[FilterCutoffEGDecayTime]);
         s.stored[DFegRelease] = int16_t(q[FilterCutoffEGReleaseTime]); s.stored[DAmpAttack] = int16_t(q[AmplitudeEGAttackTime]);
         s.stored[DAmpDecay] = int16_t(q[AmplitudeEGDecayTime]); s.stored[DAmpRelease] = int16_t(q[AmplitudeEGReleaseTime]);
@@ -389,13 +421,13 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         const uint8_t before = s.targets;
         auto aim = [&](Dest d) { if (s.targets < 32) s.target[s.targets++] = {s.boxes, uint8_t(d)}; };
         auto oscOn = [&](int n) { return q[Param(Osc1OscillatorControllerSet1Switch + n * stride + b)] != 0; };
-        const bool f1 = q[Param(Filter1FilterControllerBox1Switch + b)] != 0;
+        const bool f1 = q[Param(Filter1FilterControllerBox1Switch + b)] != 0, f2 = q[Param(Filter2FilterControllerBox1Switch + b)] != 0;
         switch (dest) {
         case kDestPitchDepth: for (int n = 0; n < 2; ++n) if (oscOn(n)) aim(Dest(DPitchDepth1 + n)); if (oscOn(2)) aim(DPitchDepth3); break;
         case kDestOscLevel: for (int n = 0; n < 2; ++n) if (oscOn(n)) aim(Dest(DOscLevel1 + n)); break;
-        case kDestCutoff: if (f1) aim(DCutoff); break;
-        case kDestFegDepth: if (f1) aim(DFegDepth); break;
-        case kDestReso: if (f1) aim(DReso); break;
+        case kDestCutoff: if (f1) aim(DCutoff); if (f2) aim(DCutoff2); break;
+        case kDestFegDepth: if (f1) aim(DFegDepth); if (f2) aim(DFegDepth2); break;
+        case kDestReso: if (f1) aim(DReso); if (f2) aim(DReso2); break;
         case kDestFegAttack: aim(DFegAttack); break;
         case kDestFegDecay: aim(DFegDecay); break;
         case kDestFegRelease: aim(DFegRelease); break;
@@ -411,7 +443,11 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     for (int k = 0; k < 8; ++k) s.knob[k] = float(q[Param(PartAssignableKnob1Value + k)]) / 1023.f;
 
     // Level: amplitude level law (dB), filter out level 0.375 dB a step about 64, calibration.
-    const double db = at(kAmpLevel, float(q[AmplitudeLevel])) + (q[Filter1FilterOutLevel] - 64) * 0.375 + kCalibrationDb;
+    double db = at(kAmpLevel, float(q[AmplitudeLevel])) + (q[Filter1FilterOutLevel] - 64) * 0.375 + kCalibrationDb;
+    if (highPassAsGain(q)) {
+        const int k = q[Filter2FilterType] - 5;
+        db += at(Law{kHpTabX[k], kHpTabY[k], kHpTabN[k], 0, 0}, float(12 * std::log2(filterFc(q[Filter2FilterCutoff]))));
+    }
     s.level = float(std::pow(10.0, db / 20));
 }
 

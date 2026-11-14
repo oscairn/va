@@ -461,8 +461,8 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     }
 
     // oscairn.ui: every parameter has a hint. Roles for the role banks; the filter and amplitude envelopes' times as two
-    // envelope views (attack, decay, release: their sustain levels are not parameters); the knobs, ribbon and switches as
-    // one group each.
+    // envelope views (attack, decay, release: their sustain levels are not parameters); the knobs, ribbon and switches, and
+    // filter 2's cutoff, EG depth and resonance as one group each.
     static bool paramHint(const clap_plugin_t*, clap_id id, oscairn_param_hint_t* h) {
         if (id >= kParamCount || !h) return false;
         *h = {};
@@ -483,6 +483,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         case kDest0 + vcore::DAmpAttack: h->role = OSCAIRN_ROLE_ATTACK; h->view = 1; h->field = OSCAIRN_FIELD_ATTACK; h->group = 4; break;
         case kDest0 + vcore::DAmpDecay: h->role = OSCAIRN_ROLE_DECAY; h->view = 1; h->field = OSCAIRN_FIELD_DECAY; h->group = 4; break;
         case kDest0 + vcore::DAmpRelease: h->role = OSCAIRN_ROLE_RELEASE; h->view = 1; h->field = OSCAIRN_FIELD_RELEASE; h->group = 4; break;
+        case kDest0 + vcore::DCutoff2: case kDest0 + vcore::DFegDepth2: case kDest0 + vcore::DReso2: h->group = 5; break;  // filter 2 (no role of its own)
         default: if (id >= kKnob1 && id <= kKnob8) h->group = 1; break;
         }
         return true;

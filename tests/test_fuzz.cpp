@@ -35,6 +35,9 @@ const char* const kFuzzed[] = {
     "Osc3OscillatorOutLevel", "Osc1OscillatorPulseWidthLFODepth", "Osc2OscillatorPulseWidthLFODepth", "Osc1OscillatorLFOWave", "Osc1OscillatorLFOSpeed",
     "Osc1OscillatorLFOKeyOnReset", "Osc2OscillatorLFOWave", "Osc2OscillatorLFOSpeed", "FilterCutoffLFOWave", "FilterCutoffLFOSpeed",
     "Filter1FilterCutoffLFODepth", "AmplitudeLFOWave", "AmplitudeLFOSpeed", "AmplitudeLFOKeyOnReset", "AmplitudeLevelLFODepth",
+    "Filter1FilterCutoffKeyFollow", "Filter1FilterCutoffVelocitySensitivity", "Filter1FilterCutoffEGDepthVelocitySensitivity",
+    "Filter1FilterResonanceVelocitySensitivity", "Filter2FilterCutoffEGDepth", "Filter2FilterCutoffKeyFollow",
+    "Filter2FilterCutoffVelocitySensitivity", "Filter2FilterCutoffEGDepthVelocitySensitivity", "Filter2FilterResonanceVelocitySensitivity",
 };
 
 std::string randomPatch(std::mt19937& r) {
@@ -42,7 +45,7 @@ std::string randomPatch(std::mt19937& r) {
     std::string t = "vcore-patch/1";
     for (const char* id : kFuzzed) { const Def* d = def(id); t += std::string(" ") + id + "=" + std::to_string(in(d->lo, d->hi)); }
     for (int n = 1; n <= 3; ++n) t += " Osc" + std::to_string(n) + "OscillatorWave=" + std::to_string(in(0, 4));
-    t += " Filter1FilterType=" + std::to_string(in(0, 1)) + " Filter2FilterType=" + std::to_string(in(0, 1) * 5);
+    t += " Filter1FilterType=" + std::to_string(in(0, 10)) + " Filter2FilterType=" + std::to_string(in(0, 10));
     static const int kSrc[] = {0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
     static const int kDst[] = {124, 136, 139, 140, 141, 142, 143, 145, 147, 148, 149};
     for (int b = 1; b <= 6; ++b) {
@@ -108,8 +111,8 @@ TEST(fuzz_output_stays_finite_and_bounded) {
                 } else ev.push_back(midi(t, 0xB0, uint8_t(kCc[in(r, 0, 5)]), uint8_t(v)));
                 break;
             }
-            case 6: {  // the ribbon or a switch (ids 11-13) jumps; or a destination (14-27) is set anywhere, or modulated far past its range
-                const clap_id id = clap_id(in(r, 11, 27));
+            case 6: {  // the ribbon or a switch (ids 11-13) jumps; or a destination (14-30) is set anywhere, or modulated far past its range
+                const clap_id id = clap_id(in(r, 11, 30));
                 clap_param_info_t info{}; a.params->get_info(a.p, id, &info);
                 if (id >= 14 && in(r, 0, 1)) {
                     clap_event_param_mod_t e{};
