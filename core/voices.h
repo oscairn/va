@@ -9,6 +9,7 @@ namespace vcore {
 constexpr int kSub = 16;
 // Band-limited oscillator tables: kLevels levels of kTabN samples (plus one guard sample each).
 constexpr int kTabN = 2048, kLevels = 41;
+constexpr float kTabPeak = 1.281f;  // the largest |sample| of any table (test_core checks it)
 // The table sets (laws.cpp bandTables): saw, square (width 0.5), triangle, saw 2, each kLevels levels; then the sine, one level.
 enum TabSet { TSaw, TSquare, TTriangle, TSaw2, TSine };  // control rate: at most this many frames between two control steps
 
@@ -150,6 +151,7 @@ enum Field {
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
     KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, SDC, UDET, UGL, UGR,
+    QEND,  // released: the amplitude envelope level at or under which the note's output gain is below -96 dBFS (0: none; the end test only)
     NFIELDS
 };
 constexpr int kStageAttack = 0, kStageDecay = 1, kStageRelease = 2;

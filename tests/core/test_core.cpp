@@ -14,6 +14,7 @@
 #include "vcore.h"
 
 using namespace vcore;
+namespace vcore { const float* bandTables(); }  // laws.cpp
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
@@ -357,6 +358,73 @@ static void testVoiceLifetime() {
     CHECK(!core->voice(5).sounding && core->voice(6).sounding);
     core->kill(6);
     CHECK(!core->voice(6).sounding && core->voiceCount() == 0);
+}
+
+// The quiet end (docs/design.md): a released note ends once a bound of its output gain is below -96 dBFS. One saw (filters thru) at
+// level 100 with a box from the mod wheel able to take it to the top, a long release (raw 200: about 6 s to the envelope's own end)
+// and the caller's gain at 0.001: the bound is the top level's saw at full scale times the sound's level, the gain and the louder pan
+// side, so the note ends where the release law brings the envelope to -96 dBFS over it, long before the envelope's own end; with the
+// wheel moved to the top just before, at the same time and still below -96 dBFS until then. A note held at a sustain under that
+// level plays on.
+static void testQuietEnd() {
+    namespace vc = vcore;
+    const char* text = "vcore-patch/1 Osc1OscillatorOutLevel=100 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Filter1FilterType=0 "
+                       "Filter2FilterType=0 AmplitudeEGAttackTime=0 AmplitudeEGDecayTime=0 AmplitudeEGReleaseTime=200 Box1ControllerSetSwitch=1 "
+                       "Box1ControllerSetSource=1 Box1ControllerSetDestination=136 Box1ControllerSetRatio=255";
+    Patch p; char e[200];
+    CHECK(readPatch(text, p, e, sizeof e));
+    for (bool wheel : {false, true}) {
+        auto core = std::make_unique<Core>(); core->prepare(48000); core->load(0, p); core->setGain(0, 0.001f, 0);
+        Sound s; core->compile(s, p);
+        std::vector<float> l(128), r(128);
+        core->noteOn(0, 0, 0, 60, 1.f);
+        for (int i = 0; i < 100; ++i) core->render(l.data(), r.data(), 128);
+        const double l0 = core->voice(0).level;  // the envelope at the note-off (full sustain: the fast release law)
+        CHECK(l0 >= s.amp.threshold);
+        core->noteOff(0);
+        const double gain = vc::lawTables().oscLevel[511] * vc::kTabPeak * s.level * 0.001 * std::sqrt(0.5), quiet = std::pow(10.0, -96.0 / 20) / gain;
+        const double target = -l0 * s.amp.endHigh;  // the release falls toward it, a straight line in log2 of the distance at lr a frame
+        const double end = std::log2((quiet - target) / (l0 - target)) / s.amp.lr, full = std::log2(-target / (l0 - target)) / s.amp.lr;
+        long last = -1, t = 0; double loud = 0;
+        while (core->voice(0).sounding && t < long(full) + 48000) {
+            if (wheel && t == long(end) / 128 * 128 - 4864) core->setController(0, 1, 1.f);  // the level to its top, 0.1 s before
+            std::fill(l.begin(), l.end(), 0.f); std::fill(r.begin(), r.end(), 0.f);
+            core->render(l.data(), r.data(), 128);
+            for (int i = 0; i < 128; ++i) {
+                const double x = std::fmax(std::fabs(l[size_t(i)]), std::fabs(r[size_t(i)]));
+                if (x > 0) last = t + i;
+                if (t + i > long(end) - 2400) loud = std::fmax(loud, x);
+            }
+            t += 128;
+        }
+        std::printf("quiet end%s: predicted %.0f frames after the note-off, last sample at %ld; the envelope's own end at %.0f\n",
+                    wheel ? " (wheel at the top)" : "", end, last, full);
+        CHECK(!core->voice(0).sounding && std::fabs(double(last) - end) <= 48 && end < 0.5 * full);
+        CHECK(loud < std::pow(10.0, -96.0 / 20));  // the level at its top could not make it audible before its end
+    }
+    {  // a unison note (two voices) ends as a whole, by the same rule, long before the envelope's own end
+        Patch q = p; q.set(Unison, 1);
+        auto core = std::make_unique<Core>(); core->prepare(48000); core->load(0, q); core->setGain(0, 0.001f, 0);
+        std::vector<float> l(128), r(128);
+        core->noteOn(0, 0, 0, 60, 1.f);
+        for (int i = 0; i < 100; ++i) core->render(l.data(), r.data(), 128);
+        core->noteOff(0);
+        long t = 0; bool whole = true;
+        while (core->voiceCount() && t < 48000 * 8) { core->render(l.data(), r.data(), 128); t += 128; whole &= core->voiceCount() != 1; }
+        CHECK(whole && core->voiceCount() == 0 && t < 48000 * 4);
+    }
+    {  // held at a sustain far below that: plays on
+        Patch q = p; q.set(AmplitudeEGSustainLevel, 1); q.set(AmplitudeEGDecayTime, 0);
+        auto core = std::make_unique<Core>(); core->prepare(48000); core->load(0, q); core->setGain(0, 0.001f, 0);
+        std::vector<float> l(128), r(128);
+        core->noteOn(0, 0, 0, 60, 1.f);
+        for (int i = 0; i < 48000 * 8 / 128; ++i) core->render(l.data(), r.data(), 128);
+        CHECK(core->voice(0).sounding && !core->voice(0).releasing);
+    }
+    // the tables' largest sample is under the bound's full scale
+    float m = 0; const float* tab = vc::bandTables();
+    for (int i = 0; i < (4 * kLevels + 1) * (kTabN + 1); ++i) m = std::fmax(m, std::fabs(tab[i]));
+    CHECK(m <= kTabPeak);
 }
 
 // Voltage drift moves: one saw (key 60, filters thru) held 12 s; its pitch in 1 s windows (rising zero
@@ -1038,7 +1106,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

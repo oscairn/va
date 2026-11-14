@@ -332,3 +332,12 @@ engine sweep (26.6 cents a step) at a fractional depth, giving the cents a step 
 | -24 / -45 to -49 / -64 / -128 (232, 207-211, 192, 128) | 7 | 17.54-75.56 dB | -0.02 to +0.20 dB | 0.5 dB | pass |
 
 This replaces round 7's known difference (the swings 4-5 % large, +1.4 to +3.6 dB, with 26.6 cents a step).
+
+# Acceptance: the quiet end of a release (0.11.0)
+
+A released note ends once a bound of its output is below -96 dBFS (`docs/design.md`, the quiet end of a release); the reference
+plays every release to the envelope's end.
+
+| case | reference | engine | result |
+|---|---|---|---|
+| a released note whose bound falls below -96 dBFS before its envelope ends (tests/core quiet_end: a saw at level 0.001, release 200: the envelope's own end 6.12 s after the note-off) | plays to the envelope's end | ends at the bound's -96 dBFS (2.27 s there; with the level box moved to its top 0.1 s before, its output under -96 dBFS over the last 50 ms) | known difference (deliberate, approved by the owner) |

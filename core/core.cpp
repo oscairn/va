@@ -462,6 +462,63 @@ struct FtzScope {  // flush denormals to zero while rendering (speed only: no re
 #endif
 };
 
+// The quiet end (docs/design.md): each released note's QEND, the amplitude envelope level at which a bound of its output, its
+// oscillators at full scale, is at -96 dBFS. The bound takes every gain on the way out as it stands now (the boxes, the host's
+// values and the note's volume; a change marks the sound for this again), the oscillator levels 1-2 at their top (a box or the
+// host may take them there) and the filters' resonant peaks at the highest cutoff the voice can still reach (its filter EG only
+// falls in the release). The note ends as a whole: the sum over its voices. Once per render call after a change, never per step.
+VC_INLINE float lane0(vf x) { alignas(16) float r[W]; store(r, x); return r[0]; }
+void quietEnds(Pool& p, const Sound& s, const Ctl& c) {
+    const LawTables& t = lawTables();
+    float osc = 0;  // the oscillators' loudest sum: a pulse is two table reads
+    for (int o = 0; o < 3; ++o)
+        if (s.plan.osc[o] != Wave::Off) osc += (o < 2 ? t.oscLevel[511] : s.osc[2]) * (s.plan.osc[o] == Wave::Pulse ? 2.f : 1.f) * kTabPeak;
+    float hp[2] = {1, 1};  // a high-pass's output gain at its loudest cutoff
+    for (int f = 0; f < 2; ++f)
+        if (s.flt[f].type >= 5) { hp[f] = 0; for (float g : t.hpGain[s.flt[f].type - 5]) hp[f] = g > hp[f] ? g : hp[f]; }
+    // a section's resonant peak at damping q: 1 / (q sqrt(1 - q^2 / 4)) under q = sqrt 2, else 1 (no peak); no damping: no bound
+    auto peak = [](float q) { return q >= 1.4142135f ? 1.f : q < 1e-4f ? 1e30f : 1.f / (q * lane0(vsqrt(splat(1.f - q * q * 0.25f)))); };
+    float k[kMaxVoices];
+    for (uint32_t i = 0; i < p.n; ++i) {
+        if (p.f[ASTG][i] < kStageRelease) continue;
+        float x = osc, fg = 1;  // the filters' output (before their gains) and their gains
+        for (int f = 0; f < 2; ++f) {
+            const int type = s.flt[f].type;
+            if (!type) continue;
+            const FilterKind kind = kKinds[type];
+            float r = c.res[f] + p.f[f ? VRES2 : VRES][i];
+            r = r < 0.f ? 0.f : r > 255.f ? 255.f : r;
+            const float eg = c.feg[f] * p.f[f ? VFEG2 : VFEG][i] * p.f[FENV][i];
+            float semi = c.cut[f] + (eg > 0.f ? eg : 0.f) + p.f[f ? DCUT2 : DCUT][i] + (f ? 0.f : c.lfoCut < 0.f ? -c.lfoCut : c.lfoCut);
+            semi = semi < kTopSemi ? semi : kTopSemi;
+            const float ft = 2.f * lane0(cosv(splat(1.5707963f - lane0(exp2v(splat(semi * (1.f / 12)))) * (3.14159265f / 44100))));
+            const float q = exp2s(1.f - r * (1.f / 32)), qa = q < 1.f ? q : 1.f;
+            float F = ft * (1.f - qa * ft * 0.25f);
+            F = F < 1.95f ? F : 1.95f;
+            const float qm = 3.f - F - F > 0.f ? 3.f - F - F : 0.f;  // the damping's ceiling at high cutoffs (filterControlBody)
+            if (kind.a == SLow || kind.a == SHigh) {
+                x *= peak(q < qm ? q : qm);
+                const float ri = float(int(r < 254.f ? r : 254.f));
+                fg *= t.resGain[int(ri)] + (r - ri) * (t.resGain[int(ri) + 1] - t.resGain[int(ri)]);
+            }
+            if (kind.b == SLow || kind.b == SHigh) x *= peak(qm < 1.f ? qm : 1.f);
+            fg *= hp[f];
+        }
+        if (s.sat) {  // y = x + c x^2 - (its mean): at most x (1 + 2 |c| x), c falls with the envelope in the release
+            const float sc = (s.satC < 0 ? -s.satC : s.satC) + (s.satCa < 0 ? -s.satCa : s.satCa) * p.f[AENV][i];
+            x *= 1.f + 2.f * sc * fg * x;
+        }
+        const float pan = s.panL > s.panR ? s.panL : s.panR, uni = p.f[UGL][i] > p.f[UGR][i] ? p.f[UGL][i] : p.f[UGR][i];
+        k[i] = p.f[VOL][i] * s.level * s.gain * fg * pan * uni * x;
+    }
+    for (uint32_t i = 0; i < p.n; ++i) {
+        if (p.f[ASTG][i] < kStageRelease) continue;
+        float sum = 0;
+        for (uint32_t j = 0; j < p.n; ++j) if (p.voice[j] == p.voice[i] && p.f[ASTG][j] >= kStageRelease) sum += k[j];
+        p.f[QEND][i] = sum > 0.f ? 1.5848932e-5f / sum : 2.f;  // 10^(-96 / 20); no gain at all: it ends now
+    }
+}
+
 void clearPos(Pool& p, uint32_t i) {
     for (int k = 0; k < NFIELDS; ++k) p.f[k][i] = 0.f;
     p.f[INC1][i] = p.f[INC2][i] = p.f[INC3][i] = 0.01f;
@@ -502,6 +559,7 @@ void Core::install(uint32_t i, const Sound& in) {
     bool m = false;
     for (float x : mod_[i]) m |= x != 0.f;
     live_[i] = m;
+    requiet_[i] = true;
 }
 
 // A 7-bit controller value v (0..127) as a box source (va-round5 C1: the mod wheel through a cutoff box lands on the static cutoff of
@@ -513,7 +571,7 @@ static float sevenBit(float x) {
 
 void Core::setPanel(uint32_t i, int source, float x) {
     const int k = source == 6 ? 0 : source == 16 ? 1 : source == 17 ? 2 : source == 4 ? 3 : source == 5 ? 4 : -1;
-    if (i < kMaxSounds && k >= 0) panel_[i][k] = sevenBit(x);
+    if (i < kMaxSounds && k >= 0) panel_[i][k] = sevenBit(x), requiet_[i] = true;
 }
 
 void Core::setDestination(uint32_t i, int d, int v) {
@@ -521,18 +579,18 @@ void Core::setDestination(uint32_t i, int d, int v) {
     if (d == DCutoff) v += sound_[i].cutOffset;
     if (d == DFegDepth || d == DFegDepth2) v -= 256;
     dest_[i][d] = int16_t(v < kDestDefs[d].lo ? kDestDefs[d].lo : v > kDestDefs[d].hi ? kDestDefs[d].hi : v);
-    live_[i] = true;
+    live_[i] = requiet_[i] = true;
 }
 
 void Core::modulateDestination(uint32_t i, int d, float steps) {
     if (i >= kMaxSounds || d < 0 || d >= kDests || !(steps == steps)) return;  // NaN ignored
     const float o = steps * 8192.f / float(kDestDefs[d].span);
     mod_[i][d] = o < -16384.f ? -16384.f : o > 16384.f ? 16384.f : o;
-    live_[i] = true;
+    live_[i] = requiet_[i] = true;
 }
 
 void Core::setKnob(uint32_t i, int k, float x) {
-    if (i < kMaxSounds && k >= 0 && k < 8) knob_[i][k] = x < 0 ? 0.f : x > 1 ? 1.f : x;
+    if (i < kMaxSounds && k >= 0 && k < 8) knob_[i][k] = x < 0 ? 0.f : x > 1 ? 1.f : x, requiet_[i] = true;
 }
 
 void Core::setGain(uint32_t i, float gain, float pan) {
@@ -541,6 +599,7 @@ void Core::setGain(uint32_t i, float gain, float pan) {
     auto qsin = [](float x) { const float x2 = x * x; return x * (1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42 * (1 - x2 / 72)))); };
     const float a = (pan < -1 ? -1 : pan > 1 ? 1 : pan) * 0.78539816f + 0.78539816f;
     sound_[i].gain = gain; sound_[i].panL = qsin(1.5707963f - a); sound_[i].panR = qsin(a);
+    requiet_[i] = true;
 }
 
 float Core::pitchNow_(uint32_t si) const {
@@ -697,7 +756,7 @@ void Core::noteOff(uint32_t v) {
         rel(AENV, ASTG, AEND, ALOW, s.amp);
         rel(FENV, FSTG, FEND, FLOW, s.feg);
     }
-    ending_[si] = true;
+    ending_[si] = requiet_[si] = true;
 }
 
 void Core::choke(uint32_t v, uint32_t frames) {
@@ -742,16 +801,19 @@ void Core::setVolume(uint32_t v, float g) {
     if (v >= kMaxVoices || slot_[v].sound < 0 || slot_[v].parked) return;
     Pool& p = pool_[slot_[v].sound];
     for (uint32_t i = 0; i < p.n; ++i) if (p.voice[i] == v) p.f[VOL][i] = g;
+    requiet_[slot_[v].sound] = true;
 }
 void Core::setPitchBend(int ch, float x) {
     if (ch < 0 || ch >= 16) return;
     bend_[ch] = x < -1 ? -1 : x > 1 ? 1 : x;
     const float v = float(int((bend_[ch] + 1) * 512.f));  // as a box source: the 14-bit bend / 16, whole (va-round3 R1 C_pb)
     src_[ch][0] = v > 1023.f ? 1023.f : v;
+    for (bool& q : requiet_) q = true;  // a box may move a resonance or a cutoff
 }
 void Core::setController(int ch, int source, float x) {
     if (ch < 0 || ch >= 16 || source <= 0 || source >= kSources || source == 4 || source == 5 || source == 6 || source >= 8) return;  // the sound's
     src_[ch][source] = sevenBit(x);
+    for (bool& q : requiet_) q = true;
 }
 
 void Core::reset() {
@@ -768,15 +830,17 @@ void Core::resetControllers(int ch) {
     for (int i = 0; i < kSources; ++i) c[i] = 0;
     c[0] = float(int((bend_[ch] + 1) * 512.f)); if (c[0] > 1023.f) c[0] = 1023.f;
     c[3] = c[4] = c[7] = 1024;  // foot controllers and breath rest at the top (the reference's reset all controllers)
+    for (bool& q : requiet_) q = true;
 }
 
-// a note is done when a voice of it reached exactly zero in its release, or its fade ended (its voices do so together)
+// a note is done when a voice of it reached exactly zero in its release or its quiet end (QEND), or its fade ended (its voices do so
+// together)
 void Core::reap_(uint32_t si) {
     Pool& p = pool_[si];
     bool ending = false;
     for (uint32_t i = 0; i < p.n;) {
         const bool rel = p.f[ASTG][i] >= kStageRelease, fade = p.f[DFADE][i] > 0.f;
-        if ((rel && p.f[AENV][i] <= 0.f) || (fade && p.f[FADE][i] <= 0.f)) { free_(si, p.voice[i]); i = 0; ending = false; continue; }  // the whole note
+        if ((rel && p.f[AENV][i] <= p.f[QEND][i]) || (fade && p.f[FADE][i] <= 0.f)) { free_(si, p.voice[i]); i = 0; ending = false; continue; }  // the whole note
         ending |= rel || fade;
         ++i;
     }
@@ -846,6 +910,7 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
         }
         const float lk[8] = {la, ld, lr, lrl, fla, fld, flr, flrl};
         std::memcpy(c.lk, lk, sizeof lk);
+        if (requiet_[si]) { requiet_[si] = false; quietEnds(pool_[si], s, c); }
     }
     for (uint32_t done = 0; done < frames;) {
         const int n = int(frames - done < uint32_t(kSub) ? frames - done : uint32_t(kSub));

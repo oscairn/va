@@ -46,8 +46,40 @@ qF < 2) whatever the EG, the boxes and the host's modulations add; the cutoff st
 than 44.1 kHz each section's F and q are recomputed at control rate so its poles in seconds are the reference's at
 44.1 kHz (z' = z^(44100 / rate), in small quantities so that low cutoffs keep their precision). Filters run two
 lanes interleaved (bit-identical to one at a time; faster on in-order cores). A voice ends when its
-amplitude envelope reaches exactly zero in its release, or when its fade (`choke`) ends; its slot is
-freed in the same step.
+amplitude envelope reaches exactly zero in its release, when its release reaches its quiet end (below), or when its fade
+(`choke`) ends; its slot is freed in the same step.
+
+### The quiet end of a release
+
+A released note (after its note-off; a key the sustain pedal holds is not released: the shell sends the note-off only when the
+pedal lets it go) also ends once a bound of its output is below -96 dBFS, whichever comes first with the envelope's own end
+(exactly zero) and a fade's. A held note never ends by it, however quiet its sustain. It is a deliberate departure from the
+envelope's full span, approved by the project's owner: a release stored long (raw 255: about 70 s to the envelope's own end)
+would otherwise keep a voice's cost long after it is inaudible.
+
+The bound is not a signal detector: it is the product of the gains on the voice's way out with its oscillators at full scale,
+taken where they could be largest (`quietEnds` in `core/core.cpp`). The oscillators' sum: each oscillator in the plan at its
+top level (oscillators 1-2 at raw 511, since a box or the host's modulation may take them there; oscillator 3 at its own) times
+the tables' largest sample (`kTabPeak`, 1.281; a pulse of another width than 0.5 is two reads: twice that). Each filter's
+resonant peak, 1 / (q sqrt(1 - q^2 / 4)) a section (1 at q of sqrt 2 and above, no bound at q under 1e-4), at the damping it
+would have at the highest cutoff the voice can still reach: the cutoff as the boxes and the host set it now, the filter EG at
+its level now if it raises the cutoff (it only falls in the release), the voice's key follow, velocity and drift, and the
+filter LFO's whole depth; the damping is the resonance's (with the voice's velocity) under the ceiling 3 - 2F that high
+cutoffs impose, and the second section of a 24 dB type at its own q of 1 under the same ceiling; a one-pole adds nothing. The
+filters' output gains (the resonance's pass-band gain, a high-pass's gain at its loudest cutoff). The saturators: y = x + c x^2
+less its mean is at most x (1 + 2 |c| x), c with the amplitude EG at its level now. Then the note's volume, the sound's level,
+the caller's gain, the louder pan side and the louder of a unison copy's two channel gains. The amplitude LFO only lowers the
+level (its top is the level) and a fade only falls: both count as 1. The engine applies no velocity or key scaling of level
+(not covered), so there is none to bound. A unison note ends as a whole: its copies share one envelope, and the bound is the sum
+of theirs. The bound uses the 44.1 kHz coefficients at every rate (the poles are mapped to the same places in seconds).
+
+The envelope level at which that bound times the envelope is -96 dBFS is stored per voice (field `QEND`) when the release starts
+and again whenever a term changes (the note's volume, the caller's gain or pan, a box source, a knob or panel control, a
+destination set or modulated, a new sound installed): such a change marks the sound, and its released voices are recomputed
+once at the start of the next render call. The end test that already runs after each control step of a sound with a voice
+releasing compares the envelope with it in place of zero, so the rule costs nothing a frame or a control step. A change after a
+note ended does not bring it back; the level terms a box or the host can move are taken at their top for that reason, the
+filter's peak as the filter stands. A filter that rings after its input stops is not counted, as by the envelope's own end.
 
 A unison note (`Unison` 1 or 2) is 2 or 4 whole voices in the pool, each with its own phases and drift, its detune and its two
 channel gains as per-voice fields (0 and 1 for a note of one voice, so such a note renders bit for bit as before). The note's

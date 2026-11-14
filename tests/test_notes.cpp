@@ -111,6 +111,23 @@ TEST(midi_notes_pedal_and_all_notes_off) {
     CHECK_EQ(a.voices(), 0u);
 }
 
+// The quiet end (docs/design.md) acts on released notes only: a quiet sound (level 0.001, a saw, filters thru) with a long release
+// (raw 200: the envelope's own end about 6.1 s after the note-off, its quiet end about 2.3 s: test_core quiet_end) held by the pedal
+// past its key-up plays on past that time, and once the pedal lets it go ends by the quiet end, before the envelope's own end.
+TEST(pedal_held_note_outlives_the_quiet_end) {
+    Inst a;
+    CHECK(a.load(std::string("oscairn-va-state 4\n0.001 0 64") + kKnobs + " \"vcore-patch/1 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 "
+                 "Filter1FilterType=0 Filter2FilterType=0 AmplitudeEGAttackTime=0 AmplitudeEGDecayTime=0 AmplitudeEGReleaseTime=200\"\n"));
+    a.block(128, {midi(0, 0xb0, 64, 127), midi(1, 0x90, 60, 100)});
+    a.run(1280);
+    a.block(128, {midi(0, 0x80, 60, 0)});  // the key up under the pedal
+    a.run(48000 * 3);
+    CHECK_EQ(a.endsTotal(), 0);
+    a.block(128, {midi(0, 0xb0, 64, 0)});  // pedal up: it releases
+    a.run(48000 * 3);
+    CHECK_EQ(a.endsTotal(), 1);
+}
+
 TEST(reset_is_immediate_and_says_nothing_about_earlier_notes) {
     Inst a;
     a.block(128, {on(0, 1, 0, 60), on(0, 2, 0, 62), on(0, 3, 0, 64), off(100, 3, 0, 64)});

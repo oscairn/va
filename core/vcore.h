@@ -160,6 +160,7 @@ private:
     int16_t dest_[kMaxSounds][kDests] = {}; // each destination's value before the boxes (install: the patch's)
     float mod_[kMaxSounds][kDests] = {};    // modulations, in box output units (+-8192 a full box)
     bool live_[kMaxSounds] = {};
+    bool requiet_[kMaxSounds] = {};         // a term of the quiet end may have changed: its released voices' QEND at the next render
     bool ending_[kMaxSounds] = {};          // a voice of the sound may be releasing or fading: reap_ runs at its control steps            // a destination set or modulated from outside: the boxes' path runs
     float src_[16][kSources] = {};    // each channel's box sources, 0..1023
     uint8_t chan_[kMaxSounds] = {};   // the channel of each sound's latest note
