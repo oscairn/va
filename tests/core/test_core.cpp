@@ -722,6 +722,29 @@ static void testBoxDestinations() {
     CHECK(e > 0 && d < 1e-10 * e);
 }
 
+// The oscillators' wave (122; va-round7 A2: the mod wheel through a +-64 box at the 7-bit map's exact values): the wave moves by
+// the sum x 4 / 8192 rounded half away from zero (sum 960 -> none, 1024 -> one step up, -1024 -> one down, -3072 -> two down).
+// A box landing on a wave sounds as that wave set in the patch, bit for bit; coverage takes the box where no pulse is involved.
+static void testWaveBox() {
+    const std::string box = "Box1ControllerSetSwitch=1 Box1ControllerSetSource=8 Box1ControllerSetDestination=122 Osc1OscillatorOutLevel=511 ";
+    const struct { int base, ratio, knob, lands; } cases[] = {{0, 192, 120, 0}, {0, 192, 128, 1}, {0, 192, 384, 2}, {2, 64, 128, 1}, {2, 192, 128, 3},
+                                                              {4, 64, 120, 4}, {4, 64, 128, 3}, {4, 64, 384, 2}};
+    for (const auto& c : cases) {
+        double h[1]; std::vector<float> a, b;
+        harmonics((box + "Osc1OscillatorWave=" + std::to_string(c.base) + " Box1ControllerSetRatio=" + std::to_string(c.ratio) +
+                   " PartAssignableKnob1Value=" + std::to_string(c.knob)).c_str(), 36, h, 1, 4410, 8820, &a);
+        harmonics(("Osc1OscillatorOutLevel=511 Osc1OscillatorWave=" + std::to_string(c.lands)).c_str(), 36, h, 1, 4410, 8820, &b);
+        double d = 0, e = 0; for (size_t i = 0; i < a.size(); ++i) { d += double(a[i] - b[i]) * (a[i] - b[i]); e += double(b[i]) * b[i]; }
+        std::printf("box on the wave: base %d, ratio %+d, knob %d -> as wave %d: %.1e relative\n", c.base, c.ratio - 128, c.knob, c.lands, std::sqrt(d / (e + 1e-30)));
+        CHECK(e > 0 && d < 1e-12 * e);
+    }
+    Gap g[64]; Patch p; char e[200];
+    readPatch(("vcore-patch/1 " + box + "Box1ControllerSetSource=6 Box1ControllerSetPolarity=1 Box1ControllerSetRatio=255").c_str(), p, e, sizeof e);
+    CHECK(notCovered(p, g, 64) == 0);  // the ribbon over its range, every wave a table read
+    p.set(Osc1OscillatorPulseWidth, 100);
+    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Osc1OscillatorWave);
+}
+
 static void testStatistics() {
     const auto x = renderProbeA(2, 1, 128);
     const size_t half = x.size() / 2, win = 4800;
@@ -746,7 +769,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testWaveBox(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

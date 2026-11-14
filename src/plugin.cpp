@@ -307,7 +307,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     void applyParam(const clap_event_header_t* h) {
         if (h->type == CLAP_EVENT_PARAM_MOD) {  // a destination's modulation, raw steps; not saved, not shown as its value
             const auto* e = reinterpret_cast<const clap_event_param_mod_t*>(h);
-            if (e->param_id < kDest0 || e->param_id > kDestLast || !std::isfinite(e->amount) || e->note_id >= 0 || e->key >= 0) return;  // global only
+            if (destOf(e->param_id) < 0 || !std::isfinite(e->amount) || e->note_id >= 0 || e->key >= 0) return;  // global only
             forTargets(e->channel, [&](uint32_t slot) { core->modParam(slot, Param(e->param_id), e->amount); });
             return;
         }
@@ -340,10 +340,10 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     // The raw patch's knob values and destinations follow the shell's parameters (main thread: the patch is not shared yet).
     static void syncKnobs(Patch& p) {
         for (int k = 0; k < 8; ++k) p.raw.set(vcore::Param(vcore::PartAssignableKnob1Value + k), int(std::lround(p.p[kKnob1 + k].get() * 1023)));
-        for (int d = 0; d < vcore::kDests; ++d) if (hasRaw(d)) p.raw.set(kDestRaw[d], int(std::lround(p.p[kDest0 + d].get())));
+        for (int d = 0; d < vcore::kDests; ++d) if (hasRaw(d)) p.raw.set(kDestRaw[d], int(std::lround(p.p[paramOf(d)].get())));
     }
     // The destination parameters from the raw patch (they are its values).
-    static void destsFromRaw(Patch& p) { for (int d = 0; d < vcore::kDests; ++d) p.p[kDest0 + d].set(hasRaw(d) ? float(p.raw[kDestRaw[d]]) : 0.f); }
+    static void destsFromRaw(Patch& p) { for (int d = 0; d < vcore::kDests; ++d) p.p[paramOf(d)].set(hasRaw(d) ? float(p.raw[kDestRaw[d]]) : 0.f); }
     // The shell's values, then the sound's raw parameters as one quoted vcore-patch text.
     bool writePatch(std::ostream& out, const Patch& p) {
         for (uint32_t i = 0; i < kStateCount; ++i) out << ' ' << p.p[i].get();
@@ -482,7 +482,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         if (i >= kParamCount) return false;
         *info = {};
         info->id = i;
-        info->flags = CLAP_PARAM_IS_AUTOMATABLE | (kParams[i].stepped ? CLAP_PARAM_IS_STEPPED : 0) | (i >= kDest0 && i <= kDestLast ? CLAP_PARAM_IS_MODULATABLE : 0);
+        info->flags = CLAP_PARAM_IS_AUTOMATABLE | (kParams[i].stepped ? CLAP_PARAM_IS_STEPPED : 0) | (destOf(i) >= 0 ? CLAP_PARAM_IS_MODULATABLE : 0);
         std::snprintf(info->name, sizeof info->name, "%s", kParams[i].name);
         info->min_value = kParams[i].min; info->max_value = kParams[i].max; info->default_value = kParams[i].def;
         return true;
@@ -494,7 +494,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     }
     static bool paramText(const clap_plugin_t*, clap_id id, double v, char* out, uint32_t n) {
         if (id >= kParamCount) return false;
-        std::snprintf(out, n, kParams[id].stepped || (id >= kDest0 && id <= kDestLast) ? "%.0f" : "%.3f", v);
+        std::snprintf(out, n, kParams[id].stepped || destOf(id) >= 0 ? "%.0f" : "%.3f", v);
         return true;
     }
     static bool paramFromText(const clap_plugin_t*, clap_id id, const char* text, double* v) {

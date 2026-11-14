@@ -58,6 +58,16 @@ TEST(param_mod_on_a_destination_equals_the_linear_box) {
     CHECK(rmsDiff(absolute, withBox) < 1e-6);
 }
 
+// The wave parameters (ids 40-42) are destinations as the others: a modulation of +0.5 raw step on Osc 1 Wave (id 40) rounds half
+// away from zero to the next wave, as a box of +1024 would (va-round7 A2), and a value event sets the wave.
+TEST(wave_parameters_are_destinations) {
+    const std::string saw = kBase + "Osc1OscillatorWave=0", saw2 = kBase + "Osc1OscillatorWave=1";
+    const auto ref = play(saw2, {}), none = play(saw, {});
+    const double m = rmsDiff(play(saw, {mod(0, 40, 0.5)}), ref), v = rmsDiff(play(saw, {param(0, 40, 1)}), ref);
+    std::printf("  wave modulation +0.5 against wave 1: %.2e; value 1: %.2e; saw against wave 1: %.2e\n", m, v, rmsDiff(none, ref));
+    CHECK(m < 1e-6 && v < 1e-6 && rmsDiff(none, ref) > 0.1);
+}
+
 // Every live source the host passes, at the same 7-bit value, drives its box as the mod wheel does: breath (CC 2), pitch bend
 // (8192: the box sees 8192 / 16 = 512, as CC value 64 through the 7-bit map), pressure (64 / 127), and the ribbon, switch and foot parameters. The ribbon's and the
 // switches' CCs (16, 86, 87) never reach a plugin in the host and move nothing.

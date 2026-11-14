@@ -32,7 +32,11 @@ constexpr uint32_t kContexts = 8;  // sound contexts (slot 0 is the default soun
 // box destinations the core moves (vcore::Dest order), in the patch's raw units: a value event sets the destination, a
 // modulation adds raw steps to it with its boxes (docs/parameters.md); their values live in the raw patch.
 enum Param : uint32_t { kLevel, kPan, kPolyphony, kKnob1, kKnob8 = kKnob1 + 7, kRibbon, kSwitch1, kSwitch2, kStateCount,
-                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::kDests - 1, kFoot2, kFootSwitch, kParamCount };
+                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kParamCount };
+// A parameter's destination (vcore::Dest; -1: not a destination) and a destination's parameter: ids 14-37, then the oscillators' waves
+// (40-42: added after the foot controls, ids are never renumbered).
+constexpr int destOf(uint32_t p) { return p >= kDest0 && p <= kDestLast ? int(p - kDest0) : p >= kWave1 && p <= kWave3 ? int(vcore::DWave1 + (p - kWave1)) : -1; }
+constexpr uint32_t paramOf(int d) { return d < vcore::DWave1 ? kDest0 + uint32_t(d) : kWave1 + uint32_t(d - vcore::DWave1); }
 struct ParamInfo { const char* name; const char* key; double min, max, def; bool stepped; };
 inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination parameter's raw patch parameter
     vcore::Osc1OscillatorPitchLFODepth, vcore::Osc2OscillatorPitchLFODepth, vcore::Osc1OscillatorOutLevel, vcore::Osc2OscillatorOutLevel,
@@ -40,7 +44,8 @@ inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination p
     vcore::FilterCutoffEGDecayTime, vcore::FilterCutoffEGReleaseTime, vcore::AmplitudeEGAttackTime, vcore::AmplitudeEGDecayTime,
     vcore::AmplitudeEGReleaseTime, vcore::Osc3OscillatorPitchLFODepth, vcore::Filter2FilterCutoff, vcore::Filter2FilterCutoffEGDepth,
     vcore::Filter2FilterResonance, vcore::Osc1OscillatorPulseWidth, vcore::Osc2OscillatorPulseWidth, vcore::Filter1FilterCutoffLFODepth,
-    vcore::PitchLFOSpeed, vcore::kParamCount, vcore::kParamCount, vcore::kParamCount};  // kParamCount: no patch parameter (the frequency offsets)
+    vcore::PitchLFOSpeed, vcore::kParamCount, vcore::kParamCount, vcore::kParamCount,  // kParamCount: no patch parameter (the frequency offsets)
+    vcore::Osc1OscillatorWave, vcore::Osc2OscillatorWave, vcore::Osc3OscillatorWave};
 // Whether a destination parameter is a raw patch parameter (saved with the patch); the frequency offsets are not (they start at 0).
 constexpr bool hasRaw(int d) { return kDestRaw[d] != vcore::kParamCount; }
 inline constexpr double kKnobDefault = 512.0 / 1023;  // the model's default knob value
@@ -60,7 +65,8 @@ inline constexpr ParamInfo kParams[] = {
     {"Osc 1 Pulse Width", "", 0, 255, 128, false}, {"Osc 2 Pulse Width", "", 0, 255, 128, false}, {"Filter LFO Depth", "", 64, 448, 256, false},
     {"Pitch LFO Speed", "", 0, 415, 208, false}, {"Osc 1 Frequency (cents)", "", -3600, 3600, 0, false},
     {"Osc 2 Frequency (cents)", "", -3600, 3600, 0, false}, {"Osc 3 Frequency (cents)", "", -3600, 3600, 0, false},
-    {"Foot Controller 2", "foot2", 0, 1, 1, false}, {"Foot Switch", "footswitch", 0, 1, 0, true}};
+    {"Foot Controller 2", "foot2", 0, 1, 1, false}, {"Foot Switch", "footswitch", 0, 1, 0, true},
+    {"Osc 1 Wave", "", 0, 4, 0, true}, {"Osc 2 Wave", "", 0, 4, 0, true}, {"Osc 3 Wave", "", 0, 4, 0, true}};
 static_assert(sizeof kParams / sizeof kParams[0] == kParamCount, "one entry a parameter");
 
 // A float that can be copied (a Patch is copied) and read by one thread while another writes it.

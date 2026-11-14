@@ -300,7 +300,9 @@ const DestDef kDestDefs[kDests] = {
     {1023, 0, 1023}, {192, -192, 192}, {255, 0, 255},  // filter 2's cutoff, EG depth and resonance as filter 1's
     // va-round6 A1: the pulse width (255), the filter LFO's depth (192), the pitch LFO's speed (415), the oscillators' frequency
     // (3600 cents: 36 semitones at a full box)
-    {255, 0, 255}, {255, 0, 255}, {192, 64, 448}, {415, 0, 415}, {3600, -3600, 3600}, {3600, -3600, 3600}, {3600, -3600, 3600}};
+    {255, 0, 255}, {255, 0, 255}, {192, 64, 448}, {415, 0, 415}, {3600, -3600, 3600}, {3600, -3600, 3600}, {3600, -3600, 3600},
+    // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
+    {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
 
 // The destinations' raw values with the boxes at these source values (src: s 0..1023 per source; knobs 0..1).
 void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, const int16_t* stored, const float* mod) {
@@ -316,9 +318,16 @@ void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, c
     if (mod) for (int d = 0; d < kDests; ++d) total[d] += mod[d];
     for (int d = 0; d < kDests; ++d) {
         const float tt = total[d] < -8192.f ? -8192.f : total[d] > 8192.f ? 8192.f : total[d];
-        int v = stored[d] + int(tt * float(kDestDefs[d].span) * (1.f / 8192));  // toward zero, as the reference
+        const float x = tt * float(kDestDefs[d].span) * (1.f / 8192);
+        // toward zero, as the reference; the wave rounded half away from zero (va-round7 A2: +-1024 of a box moves it a step)
+        int v = stored[d] + int(d < DWave1 ? x : x + (x < 0 ? -0.5f : 0.5f));
         raw[d] = int16_t(v < kDestDefs[d].lo ? kDestDefs[d].lo : v > kDestDefs[d].hi ? kDestDefs[d].hi : v);
     }
+}
+
+const float* waveTable(int wave, bool square) {
+    const TabSet set = wave == 1 ? TSaw2 : wave == 2 ? (square ? TSquare : TSaw) : wave == 3 ? TTriangle : wave == 4 ? TSine : TSaw;
+    return bandTables() + set * kLevels * (kTabN + 1);
 }
 
 void applyLaws(Sound& s, const Patch& q, double sr) {
@@ -329,9 +338,8 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         const int level = P(Osc1OscillatorOutLevel), wave = P(Osc1OscillatorWave);
         s.osc[n] = oscLevel(level);
         s.pw[n] = pulseWidth(float(P(Osc1OscillatorPulseWidth)));
-        const TabSet set = wave == 1 ? TSaw2 : wave == 2 ? (s.plan.osc[n] == Wave::Saw ? TSquare : TSaw) : wave == 3 ? TTriangle : wave == 4 ? TSine : TSaw;
-        s.tab[n] = bandTables() + set * kLevels * (kTabN + 1);
-        s.stride[n] = set == TSine ? 0.f : float(kTabN + 1);
+        s.tab[n] = waveTable(wave, s.plan.osc[n] == Wave::Saw);
+        s.stride[n] = wave == 4 ? 0.f : float(kTabN + 1);
         if (n < 2) {
             s.pwRaw[n] = float(P(Osc1OscillatorPulseWidth)); s.pwDepth[n] = float(P(Osc1OscillatorPulseWidthLFODepth) - 128);
             lfoLaws(s.oscLfo[n], P(Osc1OscillatorLFOWave), P(Osc1OscillatorLFOSpeed), P(Osc1OscillatorLFOKeyOnReset), P(Osc1OscillatorLFOPhase),
@@ -418,6 +426,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.stored[DPitchDepth3] = int16_t(q[Osc3OscillatorPitchLFODepth]);
         s.stored[DPw1] = int16_t(q[Osc1OscillatorPulseWidth]); s.stored[DPw2] = int16_t(q[Osc2OscillatorPulseWidth]);
         s.stored[DLfoCutDepth] = int16_t(q[Filter1FilterCutoffLFODepth]); s.stored[DLfoSpeed] = int16_t(q[PitchLFOSpeed]);
+        for (int n = 0; n < 3; ++n) s.stored[DWave1 + n] = int16_t(q[Param(Osc1OscillatorWave + n * stride)]);
     }
     const int bs = Box2ControllerSetSwitch - Box1ControllerSetSwitch;
     for (int b = 0; b < 16; ++b) {
@@ -446,6 +455,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestFreq: for (int n = 0; n < 3; ++n) if (oscOn(n)) aim(Dest(DFreq1 + n)); break;
         case kDestLfoCutDepth: if (f1) aim(DLfoCutDepth); break;  // filter 2 has no cutoff LFO here
         case kDestPitchLfoSpeed: aim(DLfoSpeed); break;
+        case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) aim(Dest(DWave1 + n)); break;
         default: break;
         }
         if (s.targets == before) continue;

@@ -6,7 +6,8 @@
 TEST(parameter_metadata) {
     Inst a(false);
     const uint32_t n = a.params->count(a.p);
-    CHECK_EQ(n, 40u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39; docs/parameters.md)
+    CHECK_EQ(n, 43u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
+                       // the oscillators' waves (destinations, 40-42; docs/parameters.md)
     std::vector<clap_id> seen;
     for (uint32_t i = 0; i < n; ++i) {
         clap_param_info_t info{};
@@ -16,9 +17,10 @@ TEST(parameter_metadata) {
         CHECK(std::isfinite(info.min_value) && info.min_value <= info.default_value && info.default_value <= info.max_value);
         CHECK(info.name[0] != 0);
         // a destination shows the sound's own value (the test sound's amplitude release is 112), the others their default
-        if (info.id < 14 || info.id > 37) CHECK(std::fabs(a.value(info.id) - info.default_value) < 1e-6);
+        const bool dest = (info.id >= 14 && info.id <= 37) || info.id >= 40;
+        if (!dest) CHECK(std::fabs(a.value(info.id) - info.default_value) < 1e-6);
         else CHECK(a.value(info.id) >= info.min_value && a.value(info.id) <= info.max_value);
-        CHECK(((info.flags & CLAP_PARAM_IS_MODULATABLE) != 0) == (info.id >= 14 && info.id <= 37));
+        CHECK(((info.flags & CLAP_PARAM_IS_MODULATABLE) != 0) == dest);
         char text[64] = {};
         CHECK(a.params->value_to_text(a.p, info.id, info.default_value, text, sizeof text) && text[0]);
         double back = -9;

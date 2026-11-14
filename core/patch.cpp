@@ -144,6 +144,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
             if (f2) g.add(box(b, Box1ControllerSetDestination), "controller box on filter 2's cutoff LFO depth: not measured");
             break;
         case kDestPitchLfoSpeed: d[nd++] = DLfoSpeed; break;
+        case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) d[nd++] = Dest(DWave1 + n); break;
         default: g.add(box(b, Box1ControllerSetDestination), "controller box destination: not built"); continue;
         }
         if (!nd) continue;  // reaches no unit that sounds
@@ -180,11 +181,12 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
                             q[FilterCutoffEGDecayTime], q[FilterCutoffEGReleaseTime], q[AmplitudeEGAttackTime], q[AmplitudeEGDecayTime],
                             q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth], q[Filter2FilterCutoff], q[Filter2FilterCutoffEGDepth] - 256,
                             q[Filter2FilterResonance], q[Osc1OscillatorPulseWidth], q[Osc2OscillatorPulseWidth], q[Filter1FilterCutoffLFODepth],
-                            q[PitchLFOSpeed], 0, 0, 0};
+                            q[PitchLFOSpeed], 0, 0, 0, q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
     for (int d = 0; d < kDests; ++d) {
         auto at = [&](float t) {
             t = t < -8192 ? -8192 : t > 8192 ? 8192 : t;
-            const int v = st[d] + int(t * kDestDefs[d].span / 8192);
+            const float x = t * kDestDefs[d].span / 8192;
+            const int v = st[d] + int(d < DWave1 ? x : x + (x < 0 ? -0.5f : 0.5f));  // as boxRaw
             return v < kDestDefs[d].lo ? int(kDestDefs[d].lo) : v > kDestDefs[d].hi ? int(kDestDefs[d].hi) : v;
         };
         r.lo[d] = any[d] ? at(lo[d]) : st[d]; r.hi[d] = any[d] ? at(hi[d]) : st[d];
@@ -213,6 +215,9 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         const int level = q[osc(n, Osc1OscillatorOutLevel)];
         if (!level) { if (n < 2 && r.hi[DOscLevel1 + n] > 0) g.add(osc(n, Osc1OscillatorOutLevel), "a box raising a silent oscillator: not built"); continue; }
         const int w = q[osc(n, Osc1OscillatorWave)];
+        // a box on the wave (va-round7 A2): the table swapped at a control step, so only where every wave it reaches is one table read
+        if (r.moved[DWave1 + n] && (q[osc(n, Osc1OscillatorPulseWidth)] != 128 || (n < 2 && (q[osc(n, Osc1OscillatorPulseWidthLFODepth)] != 128 || r.moved[DPw1 + n]))))
+            g.add(osc(n, Osc1OscillatorWave), "controller box on the wave with a pulse width other than 128 or moving: not built");
         if (n == 2) {  // oscillator 3: a table wave (its pulse only at width 128), its own LFO and the boxes not built
             if (w == 2 && (q[osc(n, Osc1OscillatorPulseWidth)] != 128 || q[osc(n, Osc1OscillatorPulseWidthLFODepth)] != 128))
                 g.add(osc(n, Osc1OscillatorPulseWidth), "oscillator 3's pulse: only width 128 is built");

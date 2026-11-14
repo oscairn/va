@@ -22,6 +22,7 @@ struct Ctl {  // one sound's constants for one control step of n frames
     float lfoPitch[3], osc[3];                // pitch LFO depth (semitones), oscillator out level (linear)
     float freq[3], pwRaw[2], lfoCut, lfoRate; // the boxes' frequency offsets (semitones), pulse widths (raw), filter LFO depth
                                               // (semitones), pitch LFO speed (cycles a frame)
+    const float* tab[3]; float stride[3];     // each oscillator's table set and level stride (a box may change its wave)
     alignas(16) float bend[16];               // semitones per channel
 };
 
@@ -73,8 +74,8 @@ VC_INLINE vf oscSample(const float* t, vf p, vf oa, vf ob, vf w, vf pw) {
 }
 
 template <Wave O1, Wave O2, Wave O3>
-VC_INLINE void oscillators(const Lane& l, const Sound& s, const Ctl& c, int n, vf* buf) {
-    const float *t1 = s.tab[0], *t2 = s.tab[1], *t3 = s.tab[2];
+VC_INLINE void oscillators(const Lane& l, const Ctl& c, int n, vf* buf) {
+    const float *t1 = c.tab[0], *t2 = c.tab[1], *t3 = c.tab[2];
     vf p1 = l(PH1), i1 = l(INC1), di1 = l(DINC1), w1 = l(TW1), dw1 = l(DTW1);
     vf p2 = l(PH2), i2 = l(INC2), di2 = l(DINC2), w2 = l(TW2), dw2 = l(DTW2);
     vf p3 = l(PH3), i3 = l(INC3), di3 = l(DINC3), w3 = l(TW3), dw3 = l(DTW3);
@@ -351,13 +352,13 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     const vf lg2 = fma(semis + dt2 + lp2 + splat(c.freq[1]), splat(1.f / 12), splat(s.pitch[1]));
     l.ramp(INC1, DINC1, vmin(exp2v(lg1), splat(0.45f)), fresh, rn);
     l.ramp(INC2, DINC2, vmin(exp2v(lg2), splat(0.45f)), fresh, rn);
-    level(l, TA1, TB1, TW1, DTW1, lg1, s.tabU, s.stride[0], fresh, rn);
-    level(l, TA2, TB2, TW2, DTW2, lg2, s.tabU, s.stride[1], fresh, rn);
+    level(l, TA1, TB1, TW1, DTW1, lg1, s.tabU, c.stride[0], fresh, rn);
+    level(l, TA2, TB2, TW2, DTW2, lg2, s.tabU, c.stride[1], fresh, rn);
     if constexpr (O3) {
         const vf dt3 = fma(amp, fma(l(DB3) - l(DA3), l(DP3), l(DA3)), l(DS3));
         const vf lg3 = fma(semis + dt3 + lp3 + splat(c.freq[2]), splat(1.f / 12), splat(s.pitch[2]));
         l.ramp(INC3, DINC3, vmin(exp2v(lg3), splat(0.45f)), fresh, rn);
-        level(l, TA3, TB3, TW3, DTW3, lg3, s.tabU, s.stride[2], fresh, rn);
+        level(l, TA3, TB3, TW3, DTW3, lg3, s.tabU, c.stride[2], fresh, rn);
     }
     vf fg = splat(1.f);  // the filters' output gains
     if constexpr (LP) fg = Hot ? filterControlBody(l, s, c, 0, l(FENV), lcut, fresh, rn) : filterControl(l, s, c, 0, l(FENV), lcut, fresh, rn);
@@ -411,7 +412,7 @@ struct Plan {
             l[m] = Lane{&p, (j + m) * W};
             if constexpr (kHot) controlBody<LP, HP, O3 != Wave::Off, true>(l[m], s, c);
             else control<LP, HP, O3 != Wave::Off>(l[m], s, c);
-            oscillators<O1, O2, O3>(l[m], s, c, c.n, buf[m]);
+            oscillators<O1, O2, O3>(l[m], c, c.n, buf[m]);
         }
         if constexpr (LP) { if constexpr (kHot) filterHot<N, 1>(s.flt[0].type, l, L1, c.n, buf); else filterStage<N>(s.flt[0].type, l, L1, c.n, buf); }
         if constexpr (HP) { if constexpr (kHot) filterHot<N, 5>(s.flt[1].type, l, H1, c.n, buf); else filterStage<N>(s.flt[1].type, l, H1, c.n, buf); }
@@ -758,6 +759,7 @@ void Core::render(float* L, float* R, uint32_t frames) {
             for (int f = 0; f < 2; ++f) { c.cut[f] = s.flt[f].cut; c.feg[f] = s.flt[f].feg; c.res[f] = s.flt[f].res; }
             c.lfoPitch[0] = s.lfoPitch[0]; c.lfoPitch[1] = s.lfoPitch[1]; c.lfoPitch[2] = s.lfoPitch[2];
             c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
+            for (int o = 0; o < 3; ++o) { c.tab[o] = s.tab[o]; c.stride[o] = s.stride[o]; }
             c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut; c.lfoRate = s.lfo[0].rate;
             if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
                 int16_t raw[kDests];
@@ -779,6 +781,8 @@ void Core::render(float* L, float* R, uint32_t frames) {
                 for (int n = 0; n < 3; ++n) c.freq[n] = float(raw[DFreq1 + n]) * 0.01f;
                 c.pwRaw[0] = float(raw[DPw1]); c.pwRaw[1] = float(raw[DPw2]);
                 if (raw[DLfoCutDepth] != s.stored[DLfoCutDepth]) c.lfoCut = float(raw[DLfoCutDepth] - 256) * s.lfoCutPerStep;
+                for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)
+                    if (raw[DWave1 + o] != s.stored[DWave1 + o]) { c.tab[o] = waveTable(raw[DWave1 + o], true); c.stride[o] = raw[DWave1 + o] == 4 ? 0.f : float(kTabN + 1); }
                 if (raw[DLfoSpeed] != s.stored[DLfoSpeed]) { const float r = t.lfoHz[raw[DLfoSpeed]] * float(1 / sr_); c.lfoRate = r < kLfoMaxRate ? r : kLfoMaxRate; }
                 const float k = -s.invSrLn2;
                 auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };

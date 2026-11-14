@@ -37,7 +37,7 @@ public:
         Entry& e = s.buf[s.back];
         vcore::Patch raw = p.raw;  // the knobs as the shell holds them (they start the sound's boxes)
         for (int k = 0; k < 8; ++k) raw.set(vcore::Param(vcore::PartAssignableKnob1Value + k), int(std::lround(p.p[kKnob1 + k].get() * 1023)));
-        for (int d = 0; d < vcore::kDests; ++d) if (hasRaw(d)) raw.set(kDestRaw[d], int(std::lround(p.p[kDest0 + d].get())));  // as the shell holds them
+        for (int d = 0; d < vcore::kDests; ++d) if (hasRaw(d)) raw.set(kDestRaw[d], int(std::lround(p.p[paramOf(d)].get())));  // as the shell holds them
         core_.compile(e.sound, raw);
         e.level = p.p[kLevel].get(); e.pan = p.p[kPan].get();
         const auto est = vcore::estimateCost(e.sound.plan);
@@ -61,16 +61,16 @@ public:
             core_.setPanel(c, p == kRibbon ? 6 : p == kSwitch1 ? 16 : p == kSwitch2 ? 17 : p == kFoot2 ? 4 : 5, float(x));
             return;
         }
-        if (p >= kDest0 && p <= kDestLast) { core_.setDestination(c, int(p - kDest0), int(std::lround(x))); return; }
+        if (destOf(p) >= 0) { core_.setDestination(c, destOf(p), int(std::lround(x))); return; }
         if (p == kLevel) level_[c] = float(x);
         else if (p == kPan) pan_[c] = float(x);
         else return;
         core_.setGain(c, level_[c], pan_[c]);
     }
     void modParam(uint32_t c, Param p, double amount) override {
-        if (c >= kContexts || p < kDest0 || p > kDestLast) return;
+        if (c >= kContexts || destOf(p) < 0) return;
         sync();
-        core_.modulateDestination(c, int(p - kDest0), float(amount));
+        core_.modulateDestination(c, destOf(p), float(amount));
     }
     void setPitchBend(int16_t ch, double x) override { core_.setPitchBend(ch, float(x)); }
     void setController(int16_t ch, int source, double x) override {

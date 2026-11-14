@@ -213,6 +213,8 @@ engine on a pulse of width 0.5, both pitch-tracked; `analysis/boxR1.py`, `analys
 | round 6 A1: pulse width box (125), +16 from 128 on a square | h2/h1 0.6965 (width 190.8 / 256) | 0.6872 (the width law 0.01 + 0.98 raw / 256 at 191: 0.004 of the period wide) | 0.01 | pass |
 | round 6 A1: pitch LFO speed box (401), +16 from 150 | 17.50 Hz (raw 253.4 by the speed law) | 17.34 Hz (253, truncated toward zero) | 2 % | pass |
 | round 6 A1: filter LFO depth box (144), +16 / +32 | between the static depths 256-320 / 320-384 (swings 32.9 / 59.2 dB against 0 / 42.0 / 75.6) | the static 304 / 352 (span 192) | the bracket | pass (bracketed only) |
+| round 7 (va-round7 A2): wave box (122), the wheel at 15 / 16 / 17 / 47 / 48 / 49 through +64 from the saw, at 16 through -64 / +64 from the square, at 15 / 16 / 17 / 48 through -64 from the sine (box sums 960 / 1024 / 1088 / 3008 / 3072 / 3136, -1024 / +1024, -960 / -1024 / -1088 / -3072) | saw, saw 2, saw 2, saw 2, square, square; saw 2, triangle; sine, triangle, triangle, square (each take matched one wave's harmonics 1-8 within 0.0 dB) | the same waves: the sum x 4 / 8192 rounded half away from zero; a box landing on a wave renders bit for bit as that wave set in the patch (tests/core, eight cases) | the wave | pass |
+| round 7 A2: the wheel moved during a note through the wave box (saw to sine and back) | the wave changes within one 50 ms frame of the controller | at the next control step (16 frames) | 50 ms | pass |
 
 Round 6 changed no output of probe A: the bench's output hash for 8 held voices and for the pattern on aarch64 is the same at the
 round's first commit and at its last (449f7161bb45b815, af2fb0e65523d1ac), so the tables above were not re-recorded or re-run.
