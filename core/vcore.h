@@ -147,7 +147,8 @@ private:
     float panel_[kMaxSounds][3] = {};       // ribbon, switch 1, switch 2: 0..1023
     int16_t dest_[kMaxSounds][kDests] = {}; // each destination's value before the boxes (install: the patch's)
     float mod_[kMaxSounds][kDests] = {};    // modulations, in box output units (+-8192 a full box)
-    bool live_[kMaxSounds] = {};            // a destination set or modulated from outside: the boxes' path runs
+    bool live_[kMaxSounds] = {};
+    bool ending_[kMaxSounds] = {};          // a voice of the sound may be releasing or fading: reap_ runs at its control steps            // a destination set or modulated from outside: the boxes' path runs
     float src_[16][kSources] = {};    // each channel's box sources, 0..1023
     uint8_t chan_[kMaxSounds] = {};   // the channel of each sound's latest note
     float lastKey_[kMaxSounds] = {};  // the pitch (semitones, with the sound's offsets) of each sound's latest note

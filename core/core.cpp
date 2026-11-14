@@ -631,6 +631,7 @@ void Core::noteOff(uint32_t v) {
     };
     rel(AENV, ASTG, AEND, ALOW, s.amp);
     rel(FENV, FSTG, FEND, FLOW, s.feg);
+    ending_[si] = true;
 }
 
 void Core::choke(uint32_t v, uint32_t frames) {
@@ -638,6 +639,7 @@ void Core::choke(uint32_t v, uint32_t frames) {
     if (slot_[v].parked) { unhold_(uint32_t(slot_[v].sound), v); slot_[v] = Slot{}; return; }
     Pool& p = pool_[slot_[v].sound]; const uint32_t i = slot_[v].pos;
     if (p.f[DFADE][i] == 0.f) p.f[DFADE][i] = 1.f / float(frames ? frames : 1);
+    ending_[slot_[v].sound] = true;
 }
 
 void Core::free_(uint32_t si, uint32_t i) {
@@ -695,23 +697,31 @@ void Core::resetControllers(int ch) {
 // a voice is done when its release reached exactly zero, or its fade ended
 void Core::reap_(uint32_t si) {
     Pool& p = pool_[si];
-    for (uint32_t i = p.n; i-- > 0;)
-        if ((p.f[ASTG][i] >= kStageRelease && p.f[AENV][i] <= 0.f) || (p.f[DFADE][i] > 0.f && p.f[FADE][i] <= 0.f)) free_(si, i);
+    bool ending = false;
+    for (uint32_t i = p.n; i-- > 0;) {
+        const bool rel = p.f[ASTG][i] >= kStageRelease, fade = p.f[DFADE][i] > 0.f;
+        if ((rel && p.f[AENV][i] <= 0.f) || (fade && p.f[FADE][i] <= 0.f)) free_(si, i);
+        else ending |= rel || fade;
+    }
+    ending_[si] = ending;
 }
 
 void Core::render(float* L, float* R, uint32_t frames) {
-    bool any = false;
-    for (auto& p : pool_) any |= p.n != 0;
-    if (!any) return;
+    uint8_t busy[kMaxSounds]; uint32_t nb = 0;  // the sounds with voices: no voice starts or ends within a call
+    for (uint32_t si = 0; si < kMaxSounds; ++si) if (pool_[si].n) busy[nb++] = uint8_t(si);
+    if (!nb) return;
     FtzScope ftz;
     alignas(16) float bend[kMaxSounds][16];  // each sound's bend per channel: fixed for this call, so once per call
-    for (uint32_t si = 0; si < kMaxSounds; ++si)
-        if (pool_[si].n) for (int ch = 0; ch < 16; ++ch) bend[si][ch] = bend_[ch] * (bend_[ch] >= 0 ? sound_[si].bendUp : -sound_[si].bendDown);
+    for (uint32_t b = 0; b < nb; ++b) {
+        const uint32_t si = busy[b];
+        for (int ch = 0; ch < 16; ++ch) bend[si][ch] = bend_[ch] * (bend_[ch] >= 0 ? sound_[si].bendUp : -sound_[si].bendDown);
+    }
     for (uint32_t done = 0; done < frames;) {
         const int n = int(frames - done < uint32_t(kSub) ? frames - done : uint32_t(kSub));
-        for (uint32_t si = 0; si < kMaxSounds; ++si) {
+        for (uint32_t b = 0; b < nb; ++b) {
+            const uint32_t si = busy[b];
             Pool& p = pool_[si]; const Sound& s = sound_[si];
-            if (!p.n) continue;
+            if (!p.n) continue;  // its last voice ended at an earlier step
             Ctl c;
             c.n = n; c.rn = 1.f / float(n); c.piOverSr = float(3.14159265358979 / sr_);
             const float fn = float(n);
@@ -750,11 +760,11 @@ void Core::render(float* L, float* R, uint32_t frames) {
             for (int k = 0; k < n; ++k) accL[k] = accR[k] = splat(0.f);
             s.kernel->run(p, s, c, accL, accR, interleave_);
             for (int k = 0; k < n; ++k) { L[done + k] += hsum(accL[k]); R[done + k] += hsum(accR[k]); }
-            for (uint32_t i = 0; i < p.n; ++i) slot_[p.voice[i]].age += uint64_t(n);
-            reap_(si);
+            if (ending_[si]) reap_(si);  // only a sound with a voice releasing or fading can lose one
         }
         done += uint32_t(n);
     }
+    for (uint32_t b = 0; b < nb; ++b) { const Pool& p = pool_[busy[b]]; for (uint32_t i = 0; i < p.n; ++i) slot_[p.voice[i]].age += frames; }
 }
 
 uint32_t Core::voiceCount() const { uint32_t n = 0; for (auto& p : pool_) n += p.n; return n; }
