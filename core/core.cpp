@@ -309,12 +309,14 @@ VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) {  // one 
         l.set(LT, t);
         vf m;
         if (s.plan.lfo[0]) {
-            const vf v = lfoStep(l, s.lfo[0], c.n, LP0, LR0, t, m) * m;
+            vf v = lfoStep(l, s.lfo[0], c.n, LP0, LR0, t, m);  // m is the call's output: read only after it (argument order is unspecified)
+            v = v * m;
             lp1 = v * splat(c.lfoPitch[0]); lp2 = v * splat(c.lfoPitch[1]); lp3 = v * splat(c.lfoPitch[2]);
         }
         for (int o = 0; o < 2; ++o)  // the pulse width, moved by the oscillator's own LFO: raw + depth x value through the width law
             if (s.plan.oscLfo[o]) {
-                const vf v = lfoStep(l, s.oscLfo[o], c.n, LO1 + o, LOR1 + o, t, m) * m;
+                vf v = lfoStep(l, s.oscLfo[o], c.n, LO1 + o, LOR1 + o, t, m);
+                v = v * m;
                 const vf w = vmax(vmin(fma(fma(v, splat(s.pwDepth[o]), splat(s.pwRaw[o])), splat(0.98f / 256.f), splat(0.01f)), splat(0.99f)), splat(0.01f));
                 l.ramp(PW1 + 2 * o, DPW1 + 2 * o, w, fresh, rn);
             }
