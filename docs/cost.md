@@ -79,6 +79,21 @@ layout 2: 81,913 against 82,889): the interleaved filter loop of two lanes no lo
 
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
 
+**Round 7** (the wave and portamento time destinations, the saturators, the filter EG's decay law under 144): rest 211, 1 held 51,245,
+4 held 51,269, 8 held 96,493 (**12.1k a voice**), 16 held 180,830, 8 held one lane at a time 90,429, the pattern 60,504 (max 98,570);
+hosted rest 776, hosted 8 held 98,843 (+2.4 % over the core), hosted pattern 62,010; plans per voice at 8: saw 4,694, saw + pulse 6,489,
+saw + LPF24 10,272, probe A without filter 2 9,299, saw + LPF18 6,867, three LFOs 12,576, 16 boxes 13,262, a third oscillator **14,173**, a
+pulse width LFO **14,032**, a third oscillator with all three saturators (plan 15) **14,409** (gate 15k); layout 1, 8 held 84,901. Probe A's
+output is bit-identical to round 6's (the bench's hash on aarch64, 8 held and the pattern: 449f7161bb45b815, af2fb0e65523d1ac). Every
+case with a voice rose 1.3-1.4k a block whatever the voice count: the three wave destinations and the portamento time in the boxes' per-sound step
+(a first version rounded the wave inside the destinations' loop, which stopped its vectorisation: 5.3k a block; the wave is now rounded
+in a loop of its own), and the oscillators' table sets copied into the step's constants. The saturators cost 228 a voice where they act
+(plan 15 against plan 10), counted by `vcore::estimateCost`. `core.cpp` text 256,788 bytes (+6,584; layout 1: 390,020, +7,848). Data
+added: `LawTables::portaRate` (128 floats, 512 bytes, read once per sound a step only when a box moves the portamento time), the
+saturators' laws (180 bytes, read at compile), the filter EG's decay knots under 144 (72 bytes, at compile), one voice field (the
+saturators' x^2 term: 256 bytes a sound's pool, 2 KB in all) and four destinations in the per-sound arrays (192 bytes). Bytes touched a
+block were not measured this round. The regression baseline takes these figures.
+
 **Round 6, final** (with the round's destinations: the frequency offsets and the boxes' new outputs at each control step):
 rest 213, 1 held 49,906, 4 held 49,930, 8 held 95,130 (**11.9k a voice**), 16 held 179,427, 8 held one lane at a time 89,066,
 the pattern 59,188 (max 97,232); hosted rest 779, hosted 8 held 97,481 (+2.5 %), hosted pattern 60,695; plans per voice at 8: saw
