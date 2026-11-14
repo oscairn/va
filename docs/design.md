@@ -87,6 +87,41 @@ voices are one note everywhere else: a note-off, a fade, a steal, a mono take-ov
 freed when they end, together; none is ever given up alone. The voice budget counts each (the extension's "one unison copy"
 is a voice, and the plan's cost is one voice's): a unison-4 note needs 4 voices of a limit, and the shell gives the note up whole.
 
+### Sounds sharing lanes (a design for a later round; not built)
+
+Each sound renders its own lanes of W voices, and a partly filled lane costs what a full one does: the hosted cost of 8 held
+voices is 92,110 instructions a block in one sound (2 lanes), 226,057 over 5 sounds (5 lanes) and 359,607 over 8 (8 lanes)
+(`docs/cost.md`, 0.11.0). The same voices in shared lanes would cost about what one sound's do. The design keeps the per-sound
+pools (their slots, unison copies, random sources and end test untouched) and changes only how a render call runs them:
+
+- **Groups.** Sounds whose voices take the same path through the lane code share lanes: the same kernel, filter types, LFOs
+  present and their waves, portamento, saturators and pulse-width LFOs (every branch the stage functions take on the sound).
+  Other sounds keep lanes of their own, as now.
+- **Scratch lanes.** A render call that renders two or more sounds of a group (the shell already passes several sounds' outputs;
+  it would have to render together the sounds whose next events fall at the same frame, never splitting a sound at another's
+  event) copies their live positions, in order, into scratch lanes (each position's fields, its channel and random state), runs
+  the kernel there and copies them back. About 400 instructions a voice a call and 1.6 KB more state touched a lane.
+- **Per-element constants.** What a lane reads from its sound now (the control step's constants: cutoffs, EG moves,
+  resonances, envelope coefficients, LFO depths and rates, oscillator levels, table strides, the sound's level, gain and pan,
+  about 45 values) becomes a vector of the four positions' own values, gathered once a call (and the step coefficients once a
+  step length). The oscillator tables all live in one array, so a per-element table set is a per-element offset. Every element
+  then sees the same operations on the same operands as it does with a splatted constant: the result is bit for bit the same.
+- **Outputs.** The amplitude stage accumulates `acc = fma(buf, g, acc)` lane by lane, then sums each frame's vector: a voice's
+  contribution depends on the order of that chain. Each lane keeps its filtered buffer and gain ramp per element, and each sound
+  replays its own chain in its own lane order from them (16 frames, 2 channels, one fma per original lane), so each sound's
+  output, and the bus mix after it (each sound adds into its bus as now), stays bit for bit what it is with its own lanes.
+
+Expected cost, 8 voices over 5 sounds of one group: the kernel work of 2 lanes (about 84k, from `held8-L1`), each sound's
+constants once a call (5 x 0.4k), the gathers (2 lanes x 8 steps x about 300), the copies (8 x 400) and the replays (5 sounds x 8
+steps x about 100): about 98k in the core, 100k hosted, against 226,057 now. Risks: the per-element constants touch every stage
+function's inputs, so every plan's code changes and grows (the text all plans share matters on the device's one 512 KB L2); a
+call with one sound must keep today's path (the hosted gate allows 3 % over the core); the shell's batching must keep each
+sound's control steps on its own events' grid (the shared-versus-separate tests compare sample for sample); sounds of different
+groups gain nothing (different filter types or LFO waves); the random sources stay each sound's own (they are drawn at note-on,
+outside the lanes); the copies add bytes touched a block (about 1.6 KB a lane). Not built in 0.11.0: what remains is the
+grouping key, the scratch lanes, the per-element constants in the stage functions, the output replay, the shell's batching of
+sounds without events, and tests that render mixed plans shared and separate sample for sample.
+
 ## Control rate against the reference
 
 The reference model's code processes in pages of 64 samples (its per-module page-size accessor
