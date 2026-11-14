@@ -289,7 +289,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
     g.need(q, ModifierWaveFolder, 0, 0, "wave folder: out of scope");
     // envelopes
     const int t1 = q[Filter1FilterType] || q[Filter2FilterType];
-    if (t1 && (r.lo[DFegDecay] < 144 || r.hi[DFegDecay] > 255)) g.add(FilterCutoffEGDecayTime, "decay (with its boxes): law measured 144-255");
+    if (t1 && (r.lo[DFegDecay] < 100 || r.hi[DFegDecay] > 255)) g.add(FilterCutoffEGDecayTime, "decay (with its boxes): law measured 100-255");
     if (t1 && r.lo[DFegRelease] < 128) g.add(FilterCutoffEGReleaseTime, "release (with its boxes): law measured 128-255");
     g.need(q, FilterCutoffEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
     g.need(q, AmplitudeLevel, 56, 511, "amplitude level: law measured 56-511");

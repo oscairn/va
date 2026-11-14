@@ -237,7 +237,13 @@ constexpr float kFegTimeX[] = {144, 148, 152, 156, 160, 164, 168, 172, 176, 180,
 constexpr float kFegTimeY[] = {0.09438556f, 0.1122494f, 0.1335085f, 0.1620045f, 0.1965986f, 0.2289998f, 0.2667505f, 0.3229769f, 0.3910709f,
                                0.4566108f, 0.5331451f, 0.6455899f, 0.7817613f, 0.9128375f, 1.065898f, 1.292156f, 1.566451f, 2.614f, 4.278f, 7.237f, 12.153f};
 constexpr Law kFegTime{kFegTimeX, kFegTimeY, 21, 144, 255};
-double fegDecayTau(int raw) { return raw >= 144 ? at(kFegTime, float(raw)) : at(kAmpDecay, float(raw)); }
+// Under 144 (va-round7 E1: a saw at key 84 through LPF24 at 650 read against a static depth bank at the same key, 2.5 ms frames, the
+// first 15-70 % of the segment from its peak, two takes each within 3 %): 100 / 104 / 110 / 117 / 120 / 126 / 133 / 138 -> 14.6 / 16.7 /
+// 23.6 / 29.4 / 34.0 / 46.1 / 59.4 / 73.6 ms; the knots are the amplitude decay's table scaled by the reference's reading over the engine's
+// through the same analysis (which reads the engine's law within 1 %).
+constexpr float kFegDecayLowX[] = {100, 104, 110, 117, 120, 126, 133, 138, 144};
+constexpr float kFegDecayLowY[] = {0.01440f, 0.01669f, 0.02399f, 0.02991f, 0.03414f, 0.04691f, 0.05998f, 0.07421f, 0.09438556f};
+double fegDecayTau(int raw) { return raw >= 144 ? at(kFegTime, float(raw)) : at(Law{kFegDecayLowX, kFegDecayLowY, 9, 100, 144}, float(raw)); }
 double fegReleaseTau(int raw) { return raw >= 144 ? at(kFegTime, float(raw)) : at(kFegRelease, float(raw)); }
 // Amplitude release under 112 (R2 AR_*: a sine's level slope from -3 to -40 dB, scaled by 1.042 so that 112 reads the
 // generated table's 24.3 ms): 64 / 80 / 96 / 104 -> 4.16 / 6.29 / 12.12 / 17.36 ms; under 64 too fast for the method.

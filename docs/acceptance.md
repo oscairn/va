@@ -222,3 +222,16 @@ engine on a pulse of width 0.5, both pitch-tracked; `analysis/boxR1.py`, `analys
 
 Round 6 changed no output of probe A: the bench's output hash for 8 held voices and for the pattern on aarch64 is the same at the
 round's first commit and at its last (449f7161bb45b815, af2fb0e65523d1ac), so the tables above were not re-recorded or re-run.
+
+# Acceptance: the filter EG's short decays (round 7)
+
+Measurement run va-round7 (2026-11-14) batch E1: a saw at key 84 through LPF24 at 650, resonance 0, depth 352, decay from full to sustain 0;
+the EG's level read against a static depth bank (256-352 every 8) at the same key, 2.5 ms frames, 1 ms hop, harmonics 1-20; the time
+constant fitted on the first 15-70 % of the segment from its peak. The engine (vcbench render of the same events) through the same analysis.
+
+| decay | reference (two takes) | engine | tolerance | result |
+|---|---|---|---|---|
+| 100 / 104 / 110 / 117 | 14.2, 14.9 / 16.9, 16.5 / 23.7, 23.4 / 29.4, 29.4 ms | 14.5 / 16.7 / 23.5 / 29.6 ms | 3 % | pass |
+| 120 / 126 / 133 / 138 | 32.9, 35.0 / 46.2, 46.0 / 59.3, 59.4 / 73.5, 73.7 ms | 34.1 / 46.2 / 59.0 / 73.4 ms | 3 % | pass |
+| 144 / 160 (the round 3 law) | 98.1, 97.5 / 195.7, 195.6 ms | 93.3 / 194.8 ms | 7 % (round 3's 144: 0.101 against 0.094 s) | pass |
+| the filter EG's release 64 / 70 / 80 / 100 / 128 (not built under 128) | 4.2, 4.6 / 5.1 / 6.5, 7.0 / 14.4, 14.5 / 49.1, 49.0 ms; under 64 not resolved by 2.5 ms frames | 128: 48.2 ms; under 128 the engine holds 128's | | not built under 128 (reported) |

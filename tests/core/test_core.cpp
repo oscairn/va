@@ -499,6 +499,16 @@ static void testTimeLaws() {
     p.set(FilterCutoffEGDecayTime, 244); p.set(FilterCutoffEGReleaseTime, 232); p.set(AmplitudeEGReleaseTime, 80); core->compile(s, p);
     CHECK(std::fabs(tau(s.feg.ld) / 7.237 - 1) < 0.001 && std::fabs(tau(s.feg.lr) / 4.278 - 1) < 0.001);
     CHECK(std::fabs(tau(s.amp.lr) / 0.00629 - 1) < 0.001);
+    // the filter EG's decay under 144 (va-round7 E1, the early part through the same analysis as the engine's): 110 / 120 / 133 read
+    // 23.6 / 34.0 / 59.4 ms where the amplitude decay's table, used before, gave 21.7 / 31.2 / 55.9; and 117 and 100 reach coverage
+    for (const auto& c : {std::pair<int, double>{110, 0.02399}, {120, 0.03414}, {133, 0.05998}}) {
+        p.set(FilterCutoffEGDecayTime, c.first); core->compile(s, p);
+        CHECK(std::fabs(tau(s.feg.ld) / c.second - 1) < 0.002);
+    }
+    Gap g[64]; Patch q = plain(); q.set(FilterCutoffEGDecayTime, 117);
+    CHECK(notCovered(q, g, 64) == 0);
+    q.set(FilterCutoffEGDecayTime, 99);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == FilterCutoffEGDecayTime);
 }
 
 // The pitch LFO's depth between the knots 80 and 96 (va-round3 R1: the mod wheel's box landing on 86 and 92 steps):
