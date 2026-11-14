@@ -139,8 +139,9 @@ VC_INLINE void filterRun(const Lane* l, int S, int n, vf (*buf)[kSub]) {
     VC_N({ l[m].set(S, s1[m]); l[m].set(S + 1, s2[m]); l[m].set(S + 2, s3[m]); l[m].set(S + 3, s4[m]);
            l[m].set(S + 4, F[m]); l[m].set(S + 6, qa[m]); l[m].set(S + 8, qb[m]); l[m].set(S + 10, Fb[m]); });
 }
+// Shared by every plan's kernel (not inlined into each: the code stays small; one call a control step).
 template <int N>
-VC_INLINE void filterStage(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) {
+VC_NOINLINE void filterStage(int type, const Lane* l, int S, int n, vf (*buf)[kSub]) {
     switch (type) {  // once a control step: the loops have no branch
     case 1: filterRun<N, SLow, SLow>(l, S, n, buf); break;
     case 2: filterRun<N, SLow, OLow>(l, S, n, buf); break;
@@ -183,7 +184,7 @@ VC_INLINE vf asinhv(vf x) {
 // A section's F and q (at 44.1 kHz) -> the F and q at the prepared rate with the same poles in seconds (z' = z^a, a = 44100 / rate),
 // written in small quantities so that low cutoffs keep their precision: r = sqrt(1 - qF) the poles' radius, 1 - r, and
 // s2 = (F^2 - (1 - r)^2) / 4r = sin^2(theta / 2) of the pole angle (negative: real poles, -sinh^2).
-VC_INLINE void matchPoles(vf& F, vf& q, float a) {
+VC_NOINLINE void matchPoles(vf& F, vf& q, float a) {
     const vf one = splat(1.f), A = splat(a);
     const vf u = vmin(q * F, splat(0.999f)), r = vsqrt(one - u), om = u / (one + r);
     const vf s2 = vmin((F * F - om * om) / (splat(4.f) * r), one);
@@ -251,7 +252,7 @@ VC_INLINE vf lfoStep(const Lane& l, const Lfo& o, int n, int LP, int LR, vf t, v
 // Ft = 2 sin(pi fc / 44100), the damping q = 2^(1 - r / 32) of the resonance r, F = Ft (1 - min(q, 1) Ft / 4), q at most 3 - 2F,
 // the one-pole's c = 1 - e^(-2 pi fc / 44100)), mapped to the prepared rate, ramped over the step. Returns the filter's output
 // gain (the resonance's pass-band gain, the high-pass sections' gain), which the amplitude applies.
-VC_INLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f, vf eg, vf lfo, vm fresh, vf rn) {
+VC_NOINLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f, vf eg, vf lfo, vm fresh, vf rn) {
     const int S = f ? H1 : L1, type = s.flt[f].type;
     const FilterKind k = kKinds[type];
     const LawTables& t = lawTables();
@@ -287,7 +288,7 @@ VC_INLINE vf filterControl(const Lane& l, const Sound& s, const Ctl& c, int f, v
 
 // ---- control step for one lane ------------------------------------------------------------------
 template <bool LP, bool HP, bool O3>
-VC_INLINE void control(const Lane& l, const Sound& s, const Ctl& c) {
+VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) {  // one call a lane a step: shared by the lane variants
     const vm fresh = splat(0.5f) < l(FRESH);
     const vf rn = splat(c.rn);
     envStep(l, AENV, ASTG, AEND, ALOW, c.ka, c.kd, c.kr, c.krl, s.amp.sustain);
@@ -764,13 +765,14 @@ namespace vcore {
 // lanes of 4; a partly filled lane costs as a full one. A table read (a saw, or a pulse of width 0.5)
 // is measured; any other pulse width is two reads, counted as such (not measured).
 Cost estimateCost(const PlanDesc& d) {
-    constexpr double kBase = 2780, kRead = 1670, kOsc3 = 2225, kTwoSections = 2283, kOneSection = 1705, kLfo = 130, kOscLfo = 416, kBox = 47, kRest = 216;
+    constexpr double kBase = 3010, kRead = 1670, kOsc3 = 2225, kTwoSections = 2810, kOneSection = 2175, kLfo = 130, kOscLfo = 416, kBox = 47, kRest = 216;
     double v = kBase + kBox * d.boxes;  // the boxes run once per sound a step: their share at 8 voices
     for (int n = 0; n < 2; ++n) v += d.osc[n] == Wave::Saw ? kRead : d.osc[n] == Wave::Pulse ? 2 * kRead : 0;
     if (d.osc[2] != Wave::Off) v += kOsc3;  // its read, pitch and drift (plan 10: 2.2k a voice)
     for (bool l : d.oscLfo) v += l ? kOscLfo : 0;  // the LFO and the width's ramp (plan 11: with the second read, 2.1k)
-    // a filter of two sections (LPF24, HPF24; round 5 plans 4 and 14: 2.3k and 2.2k a voice at 48 kHz, its poles mapped), any other
-    // type as a section and a one-pole (LPF18, plan 12: 1.7k; LPF12, LPF6 and their high-passes not measured, counted so)
+    // a filter of two sections (LPF24, HPF24; round 5 plans 4 and 14: 2.8k a voice at 48 kHz, its poles mapped), any other type as a
+    // section and a one-pole (LPF18, plan 12: 2.2k; LPF12, LPF6 and their high-passes not measured, counted so); the base 3.0k: the
+    // control step is one call a lane (round 5: shared by the lane variants, for code size)
     for (int f = 0; f < 2; ++f) if (d.filter[f]) v += d.filter[f] == 1 || d.filter[f] == 5 ? kTwoSections : kOneSection;
     for (bool l : d.lfo) v += l ? kLfo : 0;
     return {v, kRest};  // rest: the whole core with no voice sounding (a sound adds nothing at rest)

@@ -10,8 +10,10 @@
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #define VC_INLINE __forceinline
+#define VC_NOINLINE __declspec(noinline)
 #else
 #define VC_INLINE inline __attribute__((always_inline))
+#define VC_NOINLINE __attribute__((noinline))
 #endif
 
 #if defined(VCORE_SCALAR)

@@ -17,7 +17,20 @@ not a CTest test. Shown failing with a baseline lowered to 50000 for 8 voices (e
 
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
 
-**Round 5** (the reference's filter structure, filter 2 built, key follow and velocity): rest 216, 1 held 47,841, 4 held 48,273,
+**Round 5, code size.** The device's time per block is mostly not instructions (cache misses on the tables and the code when
+other plugins run between blocks), so the kernels were made smaller: each plan's control step is one call a lane (shared by its
+one- and two-lane variants) and the filters' sample loops and control step are shared by every plan, called once a control step.
+`core.cpp` text at `-O3 -mcpu=cortex-a53` (g++ 13.3, aarch64): 870 KB at 0.5.0, 2.14 MB with the round's filters inlined into
+every kernel, **248 KB** now. The instructions rose: rest 217, 1 held 50,647, 4 held 51,079, 8 held 96,831 (**12.1k a voice**, gate
+15k), 16 held 182,232, 8 held one lane at a time 90,767 (two lanes interleaved now cost more than one: the shared control step
+interleaves nothing), the pattern 59,745 (max 97,824). Plans (per voice at 8): saw 4,734; saw + pulse 6,530; saw + LPF24 (with
+filter 2's HPF24) 10,316; probe A 12,104; probe A with filter 2 left out 9,343; saw + LPF18 6,909; three LFOs 12,618; 16 boxes
+13,311; a third oscillator **14,210**; a pulse width LFO **14,072** (both under the 15k gate, with 0.8-0.9k to spare). The regression
+baseline is reset to these figures; `vcore::estimateCost`: base 3,010, a two-section filter 2,810, any other type 2,175. Debug
+builds with the address sanitizer: the control step 107 KB of stack, a plan's run 85 KB (365 KB at 0.5.0, which a
+512 KB thread stack only just held).
+
+**Round 5** (the reference's filter structure, filter 2 built, key follow and velocity; the figures before the code size change): rest 216, 1 held 47,841, 4 held 48,273,
 8 held 85,745 (**10.7k a voice**, gate 15k), 16 held 159,538, 8 held one lane at a time 84,537, the pattern 55,387 (max 86,738);
 shedding 8 / 16: 90,161 / 164,209 then 29,367 / 54,143, then rest. Plans (8 held voices, per voice): saw 4,506; saw + pulse 6,186;
 saw + LPF24 8,918 (its box on the filter EG depth reaches filter 2 too, so filter 2's HPF24 runs); probe A 10,718; probe A with
