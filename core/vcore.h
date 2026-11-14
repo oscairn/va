@@ -45,6 +45,8 @@ struct Gap { Param param; const char* why; };
 uint32_t notCovered(const Patch&, Gap* out, uint32_t cap);
 // Whether a key and velocity (0..127) sound at all: the zone's and the part's limits.
 bool keySounds(const Patch&, int key, int velocity);
+// The engine voices one note of the patch sounds with (its unison: 1, 2 or 4); the voice budget counts each.
+inline int unisonVoices(const Patch& p) { return 1 << (p[Unison] < 2 ? p[Unison] : 2); }
 
 // ---- the plan ----------------------------------------------------------------------------------
 enum class Stage : uint8_t { Saw1, Pulse1, Saw2, Pulse2, Filter1, Filter2, Amp, Table3 };
@@ -134,7 +136,7 @@ private:
     // parked: a held key whose voice another note took over (a mono sound's, or single key assignment's); owner: that note's slot
     struct Slot { int8_t sound = -1; uint8_t pos = 0; bool parked = false; uint8_t owner = 0; uint64_t age = 0; };
     void park_(uint32_t sound, uint32_t from, uint32_t to);   // `from` parked under `to`; slots parked under `from` follow
-    void free_(uint32_t sound, uint32_t pos);
+    void free_(uint32_t sound, uint32_t owner);              // every voice of the note in slot `owner`
     void glide_(uint32_t sound, uint32_t pos, float from);     // portamento from the pitch `from` to the voice's key
     void retrigger_(uint32_t sound, uint32_t pos);             // the envelopes to their attack from where they are, LFO resets
     float pitchNow_(uint32_t sound) const;                     // the pitch a new note of the sound glides from

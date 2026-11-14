@@ -308,7 +308,7 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     // pitch: key (with the sound's offsets) + drift + the channel's bend
     alignas(16) float bend[W];
     for (int i = 0; i < W; ++i) bend[i] = c.bend[l.p->channel[l.o + i] & 15];
-    vf semis = l(KEY) + load(bend);
+    vf semis = l(KEY) + load(bend) + l(UDET);  // a unison copy's detune (0 for a note of one voice)
     if (s.porta) {  // the glide's offset toward 0, linearly
         const vf rate = s.portaTimeMode & 1 ? l(GRATE) : splat(c.portaRate);  // a box on the time moves a glide under way (va-round7 A2)
         const vf g = l(GOFF), a = vmax(vabs(g) - rate * splat(float(c.n)), splat(0.f));
@@ -370,8 +370,8 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     l.set(FADE, fade);
     vf g = l(AENV) * l(VOL) * fade * splat(s.level * s.gain) * fg;
     if (s.plan.lfo[2]) g = g * exp2v(lamp);
-    l.ramp(GL, DGL, g * splat(s.panL), vm{}, rn);
-    l.ramp(GR, DGR, g * splat(s.panR), vm{}, rn);
+    l.ramp(GL, DGL, g * splat(s.panL) * l(UGL), vm{}, rn);  // a unison copy's level and place in the spread (1: one voice)
+    l.ramp(GR, DGR, g * splat(s.panR) * l(UGR), vm{}, rn);
     if (s.sat) l.set(SATC, fma(splat(s.satCa), l(AENV), splat(s.satC)) * fg);  // the x^2 term on the buffer (the filters' gain and the EG come later)
     l.set(FRESH, splat(0.f));
 }
@@ -462,6 +462,7 @@ void clearPos(Pool& p, uint32_t i) {
     for (int k = 0; k < NFIELDS; ++k) p.f[k][i] = 0.f;
     p.f[INC1][i] = p.f[INC2][i] = p.f[INC3][i] = 0.01f;
     p.f[ASTG][i] = p.f[FSTG][i] = 2.f; p.f[VOL][i] = p.f[FADE][i] = 1.f; p.f[FRESH][i] = 1.f; p.f[VFEG][i] = p.f[VFEG2][i] = 1.f;
+    p.f[UGL][i] = p.f[UGR][i] = 1.f;
     p.voice[i] = 0xff; p.channel[i] = 0; p.rng[i] = 1;
 }
 }  // namespace
@@ -578,8 +579,9 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
     kill(v);
     Pool& p = pool_[si]; const Sound& s = sound_[si];
     const float k = float(key) + s.keyOffset;
-    // The sound's voice that takes the note over: a mono sound's voice (if one sounds and is not fading), or with single key
-    // assignment a voice already on this key. Its earlier note ends (a mono sound keeps it held, to come back to).
+    // The sound's note that takes the new one over: a mono sound's (if one sounds and is not fading), or with single key
+    // assignment one already on this key. Its earlier note ends (a mono sound keeps it held, to come back to); every voice of it
+    // (a unison note's copies) goes over to the new note together.
     int take = -1;
     for (uint32_t i = 0; i < p.n && take < 0; ++i)
         if (p.f[DFADE][i] == 0.f && (s.mono || (s.single && p.f[KEY][i] == k))) take = int(i);
@@ -587,56 +589,66 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
     if (!s.mono) for (uint32_t i = 0; i < p.n; ++i) keyHeld |= p.f[ASTG][i] < kStageRelease && p.f[DFADE][i] == 0.f;
     const float from = pitchNow_(si);
     if (take >= 0) {
-        const uint32_t i = uint32_t(take), u = p.voice[i];
-        const bool uHeld = s.mono ? nheld_[si] && held_[si][nheld_[si] - 1].voice == u : p.f[ASTG][i] < kStageRelease;
+        const uint32_t u = p.voice[take];
+        const bool uHeld = s.mono ? nheld_[si] && held_[si][nheld_[si] - 1].voice == u : p.f[ASTG][take] < kStageRelease;
         if (uHeld) park_(si, u, v);  // its key is still down: its note-off then only lets it go
         else { for (auto& x : slot_) if (x.parked && x.sound == int(si) && x.owner == u) x.owner = uint8_t(v); slot_[u] = Slot{}; }
-        p.voice[i] = uint8_t(v); p.channel[i] = uint8_t(ch & 15);
-        p.f[KEY][i] = k; p.f[GOFF][i] = 0;
-        if (!(s.mono && s.porta && keyHeld)) retrigger_(si, i);  // legato only in mono with portamento, a key held
-        if (s.porta && (s.portaFull || keyHeld)) glide_(si, i, from);
-        slot_[v] = {int8_t(si), uint8_t(i), false, 0, 0};
-    } else {
-        if (p.n >= kMaxVoices) return;
-    const uint32_t i = p.n++;
-    clearPos(p, i);
-    auto rnd = [this] { rng_ ^= rng_ << 13; rng_ ^= rng_ >> 17; rng_ ^= rng_ << 5; return float(rng_ >> 8) * (1.f / 16777216.f); };
-    p.voice[i] = uint8_t(v); p.channel[i] = uint8_t(ch & 15);
-    p.f[KEY][i] = float(key) + s.keyOffset;
-    p.f[PH1][i] = rnd(); p.f[PH2][i] = rnd();  // free-running oscillators
-    p.f[PW1][i] = s.pw[0]; p.f[PW2][i] = s.pw[1];
-    // drift: the process runs on in the reference's voices between notes; a fresh voice starts anywhere in it
-    p.rng[i] = (rng_ ^= rng_ << 13, rng_ ^= rng_ >> 17, rng_ ^= rng_ << 5, rng_ | 1u);
-    p.f[DS1][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic; p.f[DS2][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic;
-    p.f[DA1][i] = rnd() * 2 - 1; p.f[DB1][i] = rnd() * 2 - 1; p.f[DP1][i] = rnd();
-    p.f[DA2][i] = rnd() * 2 - 1; p.f[DB2][i] = rnd() * 2 - 1; p.f[DP2][i] = rnd();
-    if (s.plan.osc[2] != Wave::Off) {
-        p.f[PH3][i] = rnd();
-        p.f[DS3][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic;
-        p.f[DA3][i] = rnd() * 2 - 1; p.f[DB3][i] = rnd() * 2 - 1; p.f[DP3][i] = rnd();
-    }
-    p.f[DCUT][i] = s.driftCutMean + (rnd() * 2 - 1) * s.driftCutSpread;
-    {  // key follow from key 60 (the played key; with a zone or part shift not measured) and velocity, semitones
-        const int v = int(vel * 127.f + 0.5f) < 0 ? 0 : int(vel * 127.f + 0.5f) > 127 ? 127 : int(vel * 127.f + 0.5f);
-        for (int f = 0; f < 2; ++f) {
-            p.f[f ? DCUT2 : DCUT][i] += s.flt[f].keyFollow * float(key - 60) + float(s.velCut[f][v]) * 0.125f;
-            p.f[f ? VFEG2 : VFEG][i] = float(s.velFeg[f][v]) * (1.f / 128);
-            p.f[f ? VRES2 : VRES][i] = float(s.velRes[f][v]);
+        for (uint32_t i = 0; i < p.n; ++i) {
+            if (p.voice[i] != u) continue;
+            p.voice[i] = uint8_t(v); p.channel[i] = uint8_t(ch & 15);
+            p.f[KEY][i] = k; p.f[GOFF][i] = 0;
+            if (!(s.mono && s.porta && keyHeld)) retrigger_(si, i);  // legato only in mono with portamento, a key held
+            if (s.porta && (s.portaFull || keyHeld)) glide_(si, i, from);
         }
-    }
-    for (int k = 0; k < 3; ++k) {  // key-on reset: the cycle starts at the phase; else anywhere (not measured how it continues)
-        if (!s.plan.lfo[k]) continue;
-        p.f[LP0 + k][i] = s.lfo[k].reset ? s.lfo[k].phase0 : rnd();
-        p.f[LR0 + k][i] = rnd() * 2 - 1;
-    }
-    for (int k = 0; k < 2; ++k) {  // the oscillators' own LFOs (the pulse width's), the same way
-        if (!s.plan.oscLfo[k]) continue;
-        p.f[LO1 + k][i] = s.oscLfo[k].reset ? s.oscLfo[k].phase0 : rnd();
-        p.f[LOR1 + k][i] = rnd() * 2 - 1;
-    }
-    p.f[ASTG][i] = p.f[FSTG][i] = kStageAttack;
-    if (s.porta && (s.portaFull || keyHeld) && lastVoice_[si] >= 0) glide_(si, i, from);
-    slot_[v] = {int8_t(si), uint8_t(i), false, 0, 0};
+        slot_[v] = {int8_t(si), uint8_t(take), false, 0, 0};
+    } else {
+        // room for every voice of the note: a note already fading out (the furthest gone first) is cut, as a full pool does
+        while (p.n + s.unison > kMaxVoices) {
+            int cut = -1;
+            for (uint32_t i = 0; i < p.n; ++i) if (p.f[DFADE][i] > 0.f && (cut < 0 || p.f[FADE][i] < p.f[FADE][cut])) cut = int(i);
+            if (cut < 0) return;  // no room: the note does not sound (voice(v) is not sounding; the caller ends it)
+            free_(si, p.voice[cut]);
+        }
+        auto rnd = [this] { rng_ ^= rng_ << 13; rng_ ^= rng_ >> 17; rng_ ^= rng_ << 5; return float(rng_ >> 8) * (1.f / 16777216.f); };
+        const int vi = int(vel * 127.f + 0.5f) < 0 ? 0 : int(vel * 127.f + 0.5f) > 127 ? 127 : int(vel * 127.f + 0.5f);
+        for (uint32_t c = 0; c < s.unison; ++c) {  // each voice of the note: its own free-running phases, drift and LFO phases
+            const uint32_t i = p.n++;
+            clearPos(p, i);
+            p.voice[i] = uint8_t(v); p.channel[i] = uint8_t(ch & 15);
+            p.f[KEY][i] = float(key) + s.keyOffset;
+            p.f[UDET][i] = s.uniDet[c]; p.f[UGL][i] = s.uniL[c]; p.f[UGR][i] = s.uniR[c];
+            p.f[PH1][i] = rnd(); p.f[PH2][i] = rnd();  // free-running oscillators
+            p.f[PW1][i] = s.pw[0]; p.f[PW2][i] = s.pw[1];
+            // drift: the process runs on in the reference's voices between notes; a fresh voice starts anywhere in it
+            p.rng[i] = (rng_ ^= rng_ << 13, rng_ ^= rng_ >> 17, rng_ ^= rng_ << 5, rng_ | 1u);
+            p.f[DS1][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic; p.f[DS2][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic;
+            p.f[DA1][i] = rnd() * 2 - 1; p.f[DB1][i] = rnd() * 2 - 1; p.f[DP1][i] = rnd();
+            p.f[DA2][i] = rnd() * 2 - 1; p.f[DB2][i] = rnd() * 2 - 1; p.f[DP2][i] = rnd();
+            if (s.plan.osc[2] != Wave::Off) {
+                p.f[PH3][i] = rnd();
+                p.f[DS3][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic;
+                p.f[DA3][i] = rnd() * 2 - 1; p.f[DB3][i] = rnd() * 2 - 1; p.f[DP3][i] = rnd();
+            }
+            p.f[DCUT][i] = s.driftCutMean + (rnd() * 2 - 1) * s.driftCutSpread;
+            for (int f = 0; f < 2; ++f) {  // key follow from key 60 (the played key; with a zone or part shift not measured) and velocity, semitones
+                p.f[f ? DCUT2 : DCUT][i] += s.flt[f].keyFollow * float(key - 60) + float(s.velCut[f][vi]) * 0.125f;
+                p.f[f ? VFEG2 : VFEG][i] = float(s.velFeg[f][vi]) * (1.f / 128);
+                p.f[f ? VRES2 : VRES][i] = float(s.velRes[f][vi]);
+            }
+            for (int n = 0; n < 3; ++n) {  // key-on reset: the cycle starts at the phase; else anywhere (not measured how it continues)
+                if (!s.plan.lfo[n]) continue;
+                p.f[LP0 + n][i] = s.lfo[n].reset ? s.lfo[n].phase0 : rnd();
+                p.f[LR0 + n][i] = rnd() * 2 - 1;
+            }
+            for (int n = 0; n < 2; ++n) {  // the oscillators' own LFOs (the pulse width's), the same way
+                if (!s.plan.oscLfo[n]) continue;
+                p.f[LO1 + n][i] = s.oscLfo[n].reset ? s.oscLfo[n].phase0 : rnd();
+                p.f[LOR1 + n][i] = rnd() * 2 - 1;
+            }
+            p.f[ASTG][i] = p.f[FSTG][i] = kStageAttack;
+            if (s.porta && (s.portaFull || keyHeld) && lastVoice_[si] >= 0) glide_(si, i, from);
+            slot_[v] = {int8_t(si), uint8_t(i), false, 0, 0};
+        }
     }
     if (s.mono && nheld_[si] < kMaxVoices) held_[si][nheld_[si]++] = {uint8_t(v), k};
     lastKey_[si] = k; lastVoice_[si] = int16_t(v);
@@ -646,55 +658,66 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
 void Core::noteOff(uint32_t v) {
     if (v >= kMaxVoices || slot_[v].sound < 0) return;
     const uint32_t si = uint32_t(slot_[v].sound);
-    Pool& p = pool_[si]; const Sound& s = sound_[si]; const uint32_t i = slot_[v].pos;
+    Pool& p = pool_[si]; const Sound& s = sound_[si];
     if (slot_[v].parked) { unhold_(si, v); slot_[v] = Slot{}; return; }  // a key whose voice another note took over
-    if (s.mono) {  // the key comes off the held list; the voice goes back to the newest key still held, else releases
+    if (s.mono) {  // the key comes off the held list; the note's voices go back to the newest key still held, else release
         unhold_(si, v);
         if (nheld_[si]) {
             const Held h = held_[si][nheld_[si] - 1];
-            const float from = p.f[KEY][i] + p.f[GOFF][i];
+            const uint32_t lead = slot_[v].pos;
+            const float from = p.f[KEY][lead] + p.f[GOFF][lead];
             for (auto& x : slot_) if (x.parked && x.sound == int(si) && x.owner == v) x.owner = h.voice;
             slot_[v] = Slot{};
-            p.voice[i] = h.voice; p.f[KEY][i] = h.key; p.f[GOFF][i] = 0;
-            slot_[h.voice] = {int8_t(si), uint8_t(i), false, 0, 0};
-            if (s.porta) glide_(si, i, from); else retrigger_(si, i);
+            for (uint32_t i = 0; i < p.n; ++i) {
+                if (p.voice[i] != v) continue;
+                p.voice[i] = h.voice; p.f[KEY][i] = h.key; p.f[GOFF][i] = 0;
+                if (s.porta) glide_(si, i, from); else retrigger_(si, i);
+            }
+            slot_[h.voice] = {int8_t(si), uint8_t(lead), false, 0, 0};
             lastKey_[si] = h.key; lastVoice_[si] = int16_t(h.voice);
             return;
         }
     }
-    auto rel = [&](int LV, int ST, int END, int LOW, const Env& e) {
-        if (p.f[ST][i] >= kStageRelease) return;
-        const float lvl = p.f[LV][i];
-        const bool low = lvl < e.threshold;
-        p.f[ST][i] = kStageRelease; p.f[LOW][i] = low ? 1.f : 0.f;
-        p.f[END][i] = lvl * (low ? e.endLow : e.endHigh);
-    };
-    rel(AENV, ASTG, AEND, ALOW, s.amp);
-    rel(FENV, FSTG, FEND, FLOW, s.feg);
+    for (uint32_t i = 0; i < p.n; ++i) {
+        if (p.voice[i] != v) continue;
+        auto rel = [&](int LV, int ST, int END, int LOW, const Env& e) {
+            if (p.f[ST][i] >= kStageRelease) return;
+            const float lvl = p.f[LV][i];
+            const bool low = lvl < e.threshold;
+            p.f[ST][i] = kStageRelease; p.f[LOW][i] = low ? 1.f : 0.f;
+            p.f[END][i] = lvl * (low ? e.endLow : e.endHigh);
+        };
+        rel(AENV, ASTG, AEND, ALOW, s.amp);
+        rel(FENV, FSTG, FEND, FLOW, s.feg);
+    }
     ending_[si] = true;
 }
 
 void Core::choke(uint32_t v, uint32_t frames) {
     if (v >= kMaxVoices || slot_[v].sound < 0) return;
     if (slot_[v].parked) { unhold_(uint32_t(slot_[v].sound), v); slot_[v] = Slot{}; return; }
-    Pool& p = pool_[slot_[v].sound]; const uint32_t i = slot_[v].pos;
-    if (p.f[DFADE][i] == 0.f) p.f[DFADE][i] = 1.f / float(frames ? frames : 1);
+    Pool& p = pool_[slot_[v].sound];
+    for (uint32_t i = 0; i < p.n; ++i)  // every voice of the note fades together
+        if (p.voice[i] == v && p.f[DFADE][i] == 0.f) p.f[DFADE][i] = 1.f / float(frames ? frames : 1);
     ending_[slot_[v].sound] = true;
 }
 
-void Core::free_(uint32_t si, uint32_t i) {
+// Frees every voice of a note (all its unison copies) at once: a note never loses a part of itself.
+void Core::free_(uint32_t si, uint32_t owner) {
     Pool& p = pool_[si];
-    const uint8_t owner = p.voice[i];
     slot_[owner] = Slot{};
     for (auto& x : slot_) if (x.parked && x.sound == int(si) && x.owner == owner) x = Slot{};  // the keys it took over end with it
     if (sound_[si].mono) nheld_[si] = 0;
-    const uint32_t last = --p.n;
-    if (i != last) {
-        for (int k = 0; k < NFIELDS; ++k) p.f[k][i] = p.f[k][last];
-        p.voice[i] = p.voice[last]; p.channel[i] = p.channel[last]; p.rng[i] = p.rng[last];
-        slot_[p.voice[i]].pos = uint8_t(i);
+    for (uint32_t i = p.n; i-- > 0;) {
+        if (p.voice[i] != owner) continue;
+        const uint32_t last = --p.n;  // the positions above i are not the owner's: the one moved down is another note's
+        if (i != last) {
+            for (int k = 0; k < NFIELDS; ++k) p.f[k][i] = p.f[k][last];
+            p.voice[i] = p.voice[last]; p.channel[i] = p.channel[last]; p.rng[i] = p.rng[last];
+        }
+        clearPos(p, last);
     }
-    clearPos(p, last);
+    for (uint32_t i = 0; i < p.n; ++i) slot_[p.voice[i]].pos = uint8_t(i);
 }
 
 void Core::kill(uint32_t v) {
@@ -702,11 +725,13 @@ void Core::kill(uint32_t v) {
     const uint32_t si = uint32_t(slot_[v].sound);
     unhold_(si, v);
     if (slot_[v].parked) { slot_[v] = Slot{}; return; }
-    free_(si, slot_[v].pos);
+    free_(si, v);
 }
 
 void Core::setVolume(uint32_t v, float g) {
-    if (v < kMaxVoices && slot_[v].sound >= 0 && !slot_[v].parked) pool_[slot_[v].sound].f[VOL][slot_[v].pos] = g;
+    if (v >= kMaxVoices || slot_[v].sound < 0 || slot_[v].parked) return;
+    Pool& p = pool_[slot_[v].sound];
+    for (uint32_t i = 0; i < p.n; ++i) if (p.voice[i] == v) p.f[VOL][i] = g;
 }
 void Core::setPitchBend(int ch, float x) {
     if (ch < 0 || ch >= 16) return;
@@ -734,14 +759,15 @@ void Core::resetControllers(int ch) {
     c[3] = c[4] = c[7] = 1024;  // foot controllers and breath rest at the top (the reference's reset all controllers)
 }
 
-// a voice is done when its release reached exactly zero, or its fade ended
+// a note is done when a voice of it reached exactly zero in its release, or its fade ended (its voices do so together)
 void Core::reap_(uint32_t si) {
     Pool& p = pool_[si];
     bool ending = false;
-    for (uint32_t i = p.n; i-- > 0;) {
+    for (uint32_t i = 0; i < p.n;) {
         const bool rel = p.f[ASTG][i] >= kStageRelease, fade = p.f[DFADE][i] > 0.f;
-        if ((rel && p.f[AENV][i] <= 0.f) || (fade && p.f[FADE][i] <= 0.f)) free_(si, i);
-        else ending |= rel || fade;
+        if ((rel && p.f[AENV][i] <= 0.f) || (fade && p.f[FADE][i] <= 0.f)) { free_(si, p.voice[i]); i = 0; ending = false; continue; }  // the whole note
+        ending |= rel || fade;
+        ++i;
     }
     ending_[si] = ending;
 }

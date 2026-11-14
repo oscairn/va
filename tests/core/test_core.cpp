@@ -89,8 +89,8 @@ static void testCoverage() {
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterResonance);
     p.set(Filter1FilterCutoff, 1000);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterResonance);  // the cutoff law itself reaches 1023
-    p = plain(); p.set(Osc3OscillatorOutLevel, 50); p.set(Unison, 1);  // oscillator 3 under 90: no measured level law
-    CHECK(notCovered(p, g, 64) == 2);
+    p = plain(); p.set(Osc3OscillatorOutLevel, 50); p.set(Unison, 2);  // oscillator 3 under 90: no measured level law (unison: covered)
+    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Osc3OscillatorOutLevel);
     p = plain(); p.set(Osc1OscillatorPitchLFODepth, 300); p.set(PitchLFOWave, 3);
     CHECK(notCovered(p, g, 64) == 0 && describe(p).lfo[0]);  // the pitch LFO: measured laws
     p.set(PitchLFOSpeed, 330);
@@ -676,6 +676,124 @@ static void testMonoAndSingle() {
     CHECK(core->voiceCount() == 1 && !core->voice(1).releasing && !core->voice(0).sounding);
 }
 
+// Unison against the reference (va-round8 U, a sine at key 84): each copy's partial at its detune, its level in the near and the far
+// channel against one voice's (mode 1: -3.01 dB, mode 2: -6.02 dB; the far side by the spread), from the left and right channels.
+static double dftDb(const std::vector<float>& x, size_t from, size_t n, double f) {
+    double re = 0, im = 0; const double pi = 3.14159265358979;
+    for (size_t i = 0; i < n; ++i) { const double w = 0.5 - 0.5 * std::cos(2 * pi * i / n), ph = 2 * pi * f * double(from + i); re += x[from + i] * w * std::cos(ph); im += x[from + i] * w * std::sin(ph); }
+    return 10 * std::log10(re * re + im * im + 1e-30);
+}
+static void renderSine(const char* extra, int key, std::vector<float>& L, std::vector<float>& R, size_t frames) {
+    const std::string t = std::string("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Filter1FilterType=0 Filter2FilterType=0 "
+                                      "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 ") + extra;
+    Patch p; char e[200]; if (!readPatch(t.c_str(), p, e, sizeof e)) { std::printf("unison: %s\n", e); ++failures; return; }
+    auto core = std::make_unique<Core>(); core->prepare(44100); core->load(0, p); core->setGain(0, 1, 0); core->noteOn(0, 0, 0, key, 0.8f);
+    L.assign(frames, 0.f); R.assign(frames, 0.f); core->render(L.data(), R.data(), uint32_t(frames));
+}
+static void testUnison() {
+    const size_t from = 13230, n = 88200;
+    const double f = 440 * std::exp2(15 / 12.0) / 44100;
+    std::vector<float> L, R;
+    renderSine("", 84, L, R, from + n);
+    const double one = dftDb(L, from, n, f);
+    // (mode, detune, spread): the reference's copies, flat to sharp: cents, left and right dB re one voice (one voice: -6.07 dB)
+    const struct { int u, d, s, copies; double c[4], l[4], r[4]; } cases[] = {
+        {1, 6, 0, 2, {-5.93, 5.94}, {-3.01, -3.01}, {-3.01, -3.01}},
+        {1, 2, 0, 2, {-1.97, 1.99}, {-3.02, -3.01}, {-3.02, -3.01}},
+        {1, 6, 14, 2, {-5.93, 5.94}, {-3.01, -15.43}, {-15.43, -3.01}},
+        {1, 6, 7, 2, {-5.93, 5.94}, {-3.01, -5.65}, {-5.65, -3.01}},
+        {1, 15, 15, 2, {-14.93, 14.95}, {-3.02, -17.70}, {-17.70, -3.02}},
+        {2, 5, 3, 4, {-9.95, -3.29, 3.30, 9.97}, {-6.02, -6.02, -6.40, -7.90}, {-7.90, -6.40, -6.02, -6.02}},
+        {2, 6, 15, 4, {-11.93, -3.95, 3.96, 11.95}, {-6.02, -6.02, -11.67, -99}, {-99, -11.67, -6.02, -6.02}}};
+    for (const auto& c : cases) {
+        renderSine(("Unison=" + std::to_string(c.u) + " UnisonDetune=" + std::to_string(c.d) + " UnisonSpread=" + std::to_string(c.s)).c_str(), 84, L, R, from + n);
+        double worstC = 0, worstDb = 0;
+        for (int k = 0; k < c.copies; ++k) {
+            double best = -1e9, at = 0;  // the copy's partial: the peak within half a cent of the reference's
+            for (double x = c.c[k] - 0.5; x <= c.c[k] + 0.5; x += 0.01) { const double v = std::pow(10, dftDb(L, from, n, f * std::exp2(x / 1200)) / 10) + std::pow(10, dftDb(R, from, n, f * std::exp2(x / 1200)) / 10); if (v > best) { best = v; at = x; } }
+            const double fk = f * std::exp2(at / 1200), l = dftDb(L, from, n, fk) - one, r = dftDb(R, from, n, fk) - one;
+            worstC = std::fmax(worstC, std::fabs(at - c.c[k]));
+            if (c.l[k] > -90) worstDb = std::fmax(worstDb, std::fabs(l - c.l[k])); else CHECK(l < -60);  // -99: silent (under the reference's floor)
+            if (c.r[k] > -90) worstDb = std::fmax(worstDb, std::fabs(r - c.r[k])); else CHECK(r < -60);
+            if (std::fabs(at - c.c[k]) > 0.1) std::printf("  copy %d: %.2f cents against %.2f\n", k, at, c.c[k]);
+        }
+        std::printf("unison %d detune %d spread %d against the reference: copies within %.3f cent and %.3f dB\n", c.u, c.d, c.s, worstC, worstDb);
+        CHECK(worstC < 0.1 && worstDb < 0.1);
+    }
+    Gap g[8]; Patch q; q.set(Unison, 2); q.set(UnisonDetune, 15); q.set(UnisonSpread, 15);
+    CHECK(notCovered(q, g, 8) == 0 && unisonVoices(q) == 4);
+}
+
+// A unison note is its voices together: started, released, faded, stolen and freed as one note (never a copy left behind); a full pool
+// cuts a note already fading; mono and legato with portamento move every copy (va-round8 U UG: the copies glide together, keep their
+// detune and spread).
+static void testUnisonNotes() {
+    Patch p; char e[200];
+    readPatch("vcore-patch/1 Unison=2 UnisonDetune=6 AmplitudeEGReleaseTime=64", p, e, sizeof e);
+    auto core = std::make_unique<Core>(); core->prepare(48000); core->load(0, p); core->setGain(0, 1, 0);
+    std::vector<float> a(128), b(128);
+    core->noteOn(3, 0, 0, 60, 1.f);
+    CHECK(core->voiceCount() == 4 && core->voice(3).sounding);
+    core->noteOn(3, 0, 0, 62, 1.f);  // the slot again: the old note's copies go with it
+    CHECK(core->voiceCount() == 4);
+    core->noteOn(4, 0, 0, 64, 1.f); core->render(a.data(), b.data(), 128);
+    core->noteOff(3);
+    CHECK(core->voice(3).releasing && core->voiceCount() == 8);
+    uint32_t frames = 0;
+    while (core->voice(3).sounding && frames < 48000) { CHECK(core->voiceCount() == 8); core->render(a.data(), b.data(), 128); frames += 128; }
+    CHECK(!core->voice(3).sounding && core->voiceCount() == 4);  // every copy ended on the same step
+    core->choke(4, 100);
+    core->render(a.data(), b.data(), 128);
+    CHECK(!core->voice(4).sounding && core->voiceCount() == 0);
+    for (uint32_t v = 0; v < 16; ++v) core->noteOn(v, 0, 0, 40 + int(v), 1.f);  // 64 voices: the pool is full
+    CHECK(core->voiceCount() == 64);
+    core->noteOn(20, 0, 0, 70, 1.f);
+    CHECK(!core->voice(20).sounding && core->voiceCount() == 64);  // no room, nothing fading: the note does not sound
+    core->choke(5, 4800);
+    core->noteOn(20, 0, 0, 70, 1.f);
+    CHECK(core->voice(20).sounding && !core->voice(5).sounding && core->voiceCount() == 64);  // the fading note is cut for it
+    core->kill(20);
+    CHECK(core->voiceCount() == 60);
+    // mono with portamento: a legato note takes every copy over and glides them; its release goes back to the held key with all of them
+    std::vector<float> L(48000), R(48000);
+    renderSine("Unison=1 UnisonDetune=15 PartMonoPolyMode=0 PortamentoMaster=1 PartPortamentoTime=8", 72, L, R, 1);
+    readPatch("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Filter1FilterType=0 Filter2FilterType=0 Osc1OscillatorWave=4 "
+              "Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Unison=1 UnisonDetune=15 PartMonoPolyMode=0 PortamentoMaster=1 PartPortamentoTime=8", p, e, sizeof e);
+    core = std::make_unique<Core>(); core->prepare(44100); core->load(0, p); core->setGain(0, 1, 0);
+    core->noteOn(0, 0, 0, 72, 0.8f); core->render(L.data(), R.data(), 4410);
+    core->noteOn(1, 0, 0, 84, 0.8f);
+    CHECK(core->voiceCount() == 2);
+    L.assign(13230 + 44100, 0.f); R.assign(L.size(), 0.f); core->render(L.data(), R.data(), uint32_t(L.size()));
+    const double f84 = 440 * std::exp2(15 / 12.0) / 44100, one = dftDb(L, 13230, 44100, f84 * std::exp2(-15 / 1200.0)), other = dftDb(L, 13230, 44100, f84 * std::exp2(15 / 1200.0));
+    const double mid = dftDb(L, 13230, 44100, f84);
+    std::printf("unison under a legato glide 72 -> 84: copies at -15 / +15 cents %.1f / %.1f dB, between them %.1f dB\n", one, other, mid);
+    CHECK(std::fabs(one - other) < 0.5 && mid < one - 6);
+    core->noteOff(1); core->render(L.data(), R.data(), 4410);
+    CHECK(core->voiceCount() == 2 && core->voice(0).sounding && !core->voice(0).releasing && !core->voice(1).sounding);
+    // random notes, releases, chokes, kills and steals on unison sounds of 2 and 4: the voices are always whole notes
+    readPatch("vcore-patch/1 Unison=1 AmplitudeEGReleaseTime=40", p, e, sizeof e);
+    Patch p4; readPatch("vcore-patch/1 Unison=2 AmplitudeEGReleaseTime=90", p4, e, sizeof e);
+    core = std::make_unique<Core>(); core->prepare(48000); core->load(0, p); core->load(1, p4); core->setGain(0, 1, 0); core->setGain(1, 1, 0);
+    uint32_t r = 12345; auto rnd = [&](uint32_t m) { r = r * 1664525u + 1013904223u; return (r >> 8) % m; };
+    int sound[kMaxVoices]; for (int& s : sound) s = -1;
+    bool whole = true, finite = true;
+    for (int step = 0; step < 4000; ++step) {
+        const uint32_t v = rnd(kMaxVoices);
+        switch (rnd(6)) {
+        case 0: case 1: sound[v] = int(rnd(2)); core->noteOn(v, uint32_t(sound[v]), 0, 30 + int(rnd(60)), 1.f); break;
+        case 2: core->noteOff(v); break;
+        case 3: core->choke(v, 1 + rnd(400)); break;
+        case 4: core->kill(v); break;
+        default: std::fill(a.begin(), a.end(), 0.f); core->render(a.data(), b.data(), 1 + rnd(128)); for (float x : a) finite &= std::isfinite(x) && std::fabs(x) < 16; break;
+        }
+        uint32_t want = 0;
+        for (uint32_t i = 0; i < kMaxVoices; ++i) if (core->voice(i).sounding) want += sound[i] == 0 ? 2 : 4;
+        if (whole && core->voiceCount() != want) std::printf("unison fuzz: step %d: %u voices, %u expected\n", step, core->voiceCount(), want);
+        whole &= core->voiceCount() == want;
+    }
+    CHECK(whole && finite);
+}
+
 // Cross-build tolerance: every 100 ms window's RMS within 2e-4 of the stored value (relative), or
 // 1e-7 absolute (-140 dBFS) where the signal is that quiet.
 constexpr double kTolerance = 2e-4, kFloor = 1e-7;
@@ -869,7 +987,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

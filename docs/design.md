@@ -49,6 +49,12 @@ lanes interleaved (bit-identical to one at a time; faster on in-order cores). A 
 amplitude envelope reaches exactly zero in its release, or when its fade (`choke`) ends; its slot is
 freed in the same step.
 
+A unison note (`Unison` 1 or 2) is 2 or 4 whole voices in the pool, each with its own phases and drift, its detune and its two
+channel gains as per-voice fields (0 and 1 for a note of one voice, so such a note renders bit for bit as before). The note's
+voices are one note everywhere else: a note-off, a fade, a steal, a mono take-over and a glide move all of them, and the slot is
+freed when they end, together; none is ever given up alone. The voice budget counts each (the extension's "one unison copy"
+is a voice, and the plan's cost is one voice's): a unison-4 note needs 4 voices of a limit, and the shell gives the note up whole.
+
 ## Control rate against the reference
 
 The reference model's code processes in pages of 64 samples (its per-module page-size accessor

@@ -151,6 +151,28 @@ constexpr float kSatAmpDb[] = {0, 0.148f, 0.363f, 0.579f, 0.609f, 0.768f, 0.859f
 constexpr float kSatAmpA2[] = {0, 0.00124f, 0.00148f, 0.00191f, 0.00209f, 0.00295f, 0.00383f, 0.00417f, 0.00763f};
 constexpr double kSatUnit = 1.1663;  // the engine's single sine at oscillator level 511, filter open
 
+// Unison (va-round8 U: a sine at keys 60, 84 and 96, each copy's partial read in the left and right channels; va-round7 X1 for the values
+// the parts use): mode 1 is two copies at -/+ the detune in cents (0-15: within 0.07 cent), each 3.01 dB down (1 / sqrt 2); mode 2 four at
+// -2, -2/3, +2/3 and +2 times it (within 0.06 cent), each 6.02 dB down. The flat copies sit left, the sharp right: the near channel at the
+// copy's level, the far one attenuated by the spread (dB at spread 0-15, read within 0.01 dB; mode 2's inner copies as mode 1's at 2/3 of the
+// spread, its outer ones at twice it; past -60 dB, under the method's floor, silent). The same at every key; a glide moves the copies together.
+constexpr float kUniFarDb[3][16] = {
+    {0, 0, -0.38f, -0.38f, -0.75f, -1.50f, -1.88f, -2.63f, -3.39f, -4.51f, -5.64f, -6.77f, -8.66f, -10.16f, -12.42f, -14.68f},  // mode 1
+    {0, 0, 0, -0.38f, -0.38f, -0.75f, -0.75f, -1.13f, -1.51f, -1.88f, -2.26f, -3.01f, -3.39f, -4.14f, -4.89f, -5.65f},           // mode 2 inner
+    {0, -0.38f, -0.75f, -1.88f, -3.39f, -5.65f, -8.65f, -12.42f, -17.66f, -26.28f, -44.97f, -200, -200, -200, -200, -200}};    // mode 2 outer
+void unisonLaws(Sound& s, const Patch& q) {
+    const int u = std::min(2, int(q[Unison]));
+    s.unison = uint8_t(1 << u);
+    if (!u) return;
+    const float g = u == 1 ? float(std::sqrt(0.5)) : 0.5f;
+    static const float kMul[2][4] = {{-1, 1}, {-2, -2.f / 3, 2.f / 3, 2}};
+    for (int k = 0; k < s.unison; ++k) {
+        const float m = kMul[u - 1][k], far = g * float(std::pow(10.0, kUniFarDb[u == 1 ? 0 : std::fabs(m) > 1 ? 2 : 1][q[UnisonSpread]] / 20));
+        s.uniDet[k] = m * float(q[UnisonDetune]) / 100;
+        s.uniL[k] = m < 0 ? g : far; s.uniR[k] = m < 0 ? far : g;
+    }
+}
+
 // ---- the filters ------------------------------------------------------------------------------------------------------------
 // va-round5 F1: every type is a cascade of the reference's sections (core.cpp filterRun, filterControl), read within 0.001 dB on a
 // 32.7 Hz saw's harmonics against thru. The cutoff law gives the reference's fc (Hz) at each raw value (F3: LPF12 every 8 raw
@@ -389,6 +411,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.lfoAmp = float(std::copysign(double(at(Law{kLfoAmpX, kLfoAmpY, 17, 0, 127}, float(std::abs(a)))) / 6.0206, double(a)));
         s.lfo[2].phase0 = s.lfo[2].phase0 + 0.25f - (s.lfo[2].phase0 >= 0.75f ? 1.f : 0.f);
     }
+    unisonLaws(s, q);
     s.porta = q[PortamentoMaster] && q[PartPortamentoSwitch];
     s.portaFull = q[PartPortamentoMode] != 0;
     s.portaTimeMode = uint8_t(q[PartPortamentoTimeMode]);

@@ -22,7 +22,7 @@ const Def* def(const char* id) { for (auto& d : kDefs) if (!std::strcmp(d.id, id
 
 // The parameters the core reads (core/laws.cpp, core/patch.cpp describe), each over its whole raw range.
 const char* const kFuzzed[] = {
-    "VoltageDrift", "FilterCutoffEGAttackTime", "FilterCutoffEGDecayTime", "FilterCutoffEGSustainLevel",
+    "VoltageDrift", "Unison", "UnisonDetune", "UnisonSpread", "FilterCutoffEGAttackTime", "FilterCutoffEGDecayTime", "FilterCutoffEGSustainLevel",
     "FilterCutoffEGReleaseTime", "AmplitudeLevel", "PartFEGDepth", "PartFilterCutoffFrequency", "AmplitudeEGAttackTime", "AmplitudeEGDecayTime",
     "AmplitudeEGSustainLevel", "AmplitudeEGReleaseTime", "Osc1OscillatorOctave", "Osc1OscillatorPitch",
     "Osc1OscillatorPulseWidth", "Osc1OscillatorOutLevel", "Osc2OscillatorOctave", "Osc2OscillatorPitch",

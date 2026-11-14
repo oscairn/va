@@ -252,3 +252,25 @@ the fundamental. The engine renders the same patches (tests/core `testSaturators
 | three sines in phase (amplitude 3), filter drives 7 / 8 / 15 / 23, amplitude 8 / 23 (va-round7 S2) | g +1.075 / +1.167 / +1.051 / +0.659 dB, +0.595 / +1.590 dB; a2 0.00290 / 0.00316 / 0.00579 / 0.01148, 0.00209 / 0.00748; h3 -68 to -64 dB, at 23 -52 (filter) and -46 dB (amplitude) | the single-amplitude g and a2 (the law has no x^3) | 0.15 dB; 2 % | pass (h3 at 23 a known difference) |
 | the amplitude saturator over the amplitude EG's decay (drive 23) and at amplitude levels 300 / 431 | h2 against h1 falls 18.4 dB as the level falls 18.0 dB (0.3-2.5 s); -48.35 dB at both levels as at 511 | after the EG (tests/core: within 1 dB of the level's fall), before the level | 1 dB | pass |
 | residual odd harmonics at drives 2-16 | h5, h7, h9 at -62 to -73 dB against h1 (none at drive 0) | none | | known difference |
+
+# Acceptance: unison (round 8)
+
+Probes measurement run va-round8 (2026-11-14) batch U, with round 7's X1 for the values the parts use: a sine (oscillator 1, level 511,
+filters thru, drift 0) at key 84 or 96, each copy's partial found by a 2^22-point spectrum of 1.5-3.8 s of the note (left and right
+channels apart); the engine renders the same patches (tests/core `testUnison`: the same partials by a Hann-windowed transform of 2 s).
+
+| quantity | points | reference | engine | tolerance | result |
+|---|---|---|---|---|---|
+| mode 1 detune 1-15 (key 96) | 15 | -/+ (d - 0.01 to 0.07) cents | -/+ d cents | 0.1 cent | pass (law within 0.07) |
+| mode 2 detune 1-15 (key 96) | 15 | -/+ 2d/3 and -/+ 2d, within 0.06 cent | the same | 0.1 cent | pass |
+| copy level, mode 1 / mode 2, against one voice (key 84) | 2 | -3.02 / -6.02 dB | -3.01 / -6.02 dB | 0.1 dB | pass |
+| spread 0-15, the far channel against the near, mode 1 / mode 2 inner / mode 2 outer (key 84, detune 6) | 48 | the table (`docs/coverage.md`) | the same table | 0.1 dB | pass |
+| the parts' settings and two more (mode, detune, spread: 1 6 0, 1 2 0, 1 6 14, 1 6 7, 1 15 15, 2 5 3, 2 6 15), every copy in both channels | 7 | X1 / U | within 0.08 cent and 0.011 dB (tests/core) | 0.1 cent, 0.1 dB | pass |
+| key dependence: mode 1, detune 15, spread 15 at key 60 against key 84 | 1 | -/+ 14.94 cents, far side -14.68 dB at both | no key dependence | | pass |
+| mono, portamento 72 -> 84 at time 64, mode 1 detune 15 spread 15 | 1 | the copies glide together, at -/+ 14.94 cents and -14.68 dB after it | every copy of the note glides; after a glide the copies at -/+ 15 cents and equal (tests/core) | | pass |
+| the copies' relative phase at a note's start (detune 0, 12 notes of one key) | 12 / 12 | modes 1 and 2: deterministic cycles of 8 and 4 notes (the copies are voices of a pool that run on between notes: the same key struck again meets the same phase relations); mean cos^2 of half the relative phase 0.53 over mode 1's 8 | each copy at a random phase (mean 0.5) | | known difference: the same distribution, not the reference's sequence; heard only at detune 0, which no part uses |
+
+Whole-note behaviour (tests/core `testUnisonNotes`, the voice budget's `unison_note_counts_its_voices_and_goes_whole`): a unison note's
+2 or 4 voices start, release, end, fade and are freed on the same control step (4,000 random notes, releases, chokes, kills and steals
+on sounds of 2 and 4: the voice count is always a whole number of notes); a note stolen in its slot takes its copies with it; a full
+pool cuts a note already fading for a new one, and a note with no room does not sound (its slot reports so and the shell ends it).

@@ -129,6 +129,10 @@ struct Sound {
     bool sat = false;
     float satC = 0, satCa = 0;
     float gain = 1, panL = 0.70710678f, panR = 0.70710678f;  // the caller's level and pan
+    // Unison (laws.cpp): a note sounds as `unison` engine voices (1, 2 or 4), each a whole voice with its own free-running phases and
+    // drift; copy c is detuned by uniDet[c] semitones and weighed by uniL[c] / uniR[c] (its level and its place in the spread).
+    uint8_t unison = 1;
+    float uniDet[4] = {}, uniL[4] = {1, 1, 1, 1}, uniR[4] = {1, 1, 1, 1};
 };
 // The destinations' raw values with the boxes at the given source values (src: 0..1023 per source; knob: 0..1).
 // stored: each destination's value before the boxes (null: the sound's own); mod: added to each destination's box sum before
@@ -144,7 +148,7 @@ enum Field {
     GL, DGL, GR, DGR,
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
-    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, UDET, UGL, UGR,
     NFIELDS
 };
 constexpr int kStageAttack = 0, kStageDecay = 1, kStageRelease = 2;
