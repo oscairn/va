@@ -79,6 +79,19 @@ layout 2: 81,913 against 82,889): the interleaved filter loop of two lanes no lo
 
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
 
+**Round 8** (unison, voltage drift to 127, the short release laws, the filter LFO's depth law, the saturators' DC removal): rest 211,
+1 held 51,230, 4 held 51,254, 8 held 96,550 (**12.1k a voice**), 16 held 181,087, 8 held one lane at a time 90,526, the pattern 60,762
+(max 99,100); hosted rest 787, hosted 8 held 99,169 (+2.7 % over the core), hosted pattern 62,419; plans per voice at 8: saw 4,706, saw +
+pulse 6,503, saw + LPF24 10,284, saw + LPF18 6,879, three LFOs 12,583, 16 boxes 13,269, a third oscillator 14,186, a pulse width LFO
+14,042, a third oscillator with all three saturators (plan 15) **14,606** (gate 15k; +185 for the DC removal's running mean), probe A
+with unison mode 2 (plan 16: 8 notes, 32 voices) 350,159 a block, **10.9k a voice** (a unison note costs its voices; the per-sound step is
+shared). Each voice has three more control-rate fields (a copy's detune and two channel gains: 0 and 1 for a note of one voice) and the
+saturators' running mean: 4 fields, 1 KB a sound's pool, 8 KB in all; `Sound` grows by 56 bytes (unison, the DC removal's coefficient).
+Data added: the spread table (192 bytes), the drift's knots past 64 (72 bytes) and the short release knots (32 bytes), read at compile.
+`core.cpp` text 258,124 bytes (+1,336). The shell's budget counts each unison note's voices per block (hosted 8 held +2.7 % against round 7's +2.4 %, under
+the 3 % gate). Probe A's output changed (the drift's cutoff spread at 64): the bench's hash on aarch64 is now 7b60be9cf6a50a91 (8 held) and
+020069449dc06e17 (the pattern). Bytes touched a block were not measured. The regression baseline takes these figures.
+
 **Round 7** (the wave and portamento time destinations, the saturators, the filter EG's decay law under 144): rest 211, 1 held 51,245,
 4 held 51,269, 8 held 96,493 (**12.1k a voice**), 16 held 180,830, 8 held one lane at a time 90,429, the pattern 60,504 (max 98,570);
 hosted rest 776, hosted 8 held 98,843 (+2.4 % over the core), hosted pattern 62,010; plans per voice at 8: saw 4,694, saw + pulse 6,489,
