@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Stability under anything reachable live: random patches over the full raw ranges of the parameters the
-// core implements, controller boxes from every source the core takes (knobs, mod wheel, bend, aftertouch, foot, breath,
-// ribbon, switches) on every destination it moves, at any ratio, polarity and curve, random live knob, ribbon and switch
+// core implements, controller boxes from every source the core takes (knobs, mod wheel, bend, aftertouch, foot controllers,
+// foot switch, breath, ribbon, switches) on every destination it moves, at any ratio, polarity and curve, random live knob, ribbon and switch
 // values, destination values and modulations far past their ranges, the MIDI controllers a host passes, pressure, pitch
 // bends and notes, at most 8 voices. The output must stay finite and under +12 dBFS, and the state must still round-trip afterwards.
 #include <random>
@@ -46,11 +46,11 @@ std::string randomPatch(std::mt19937& r) {
     for (const char* id : kFuzzed) { const Def* d = def(id); t += std::string(" ") + id + "=" + std::to_string(in(d->lo, d->hi)); }
     for (int n = 1; n <= 3; ++n) t += " Osc" + std::to_string(n) + "OscillatorWave=" + std::to_string(in(0, 4));
     t += " Filter1FilterType=" + std::to_string(in(0, 10)) + " Filter2FilterType=" + std::to_string(in(0, 10));
-    static const int kSrc[] = {0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
-    static const int kDst[] = {124, 136, 139, 140, 141, 142, 143, 145, 147, 148, 149};
+    static const int kSrc[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
+    static const int kDst[] = {124, 136, 139, 140, 141, 142, 143, 145, 147, 148, 149, 123, 125, 144, 401};
     for (int b = 1; b <= 6; ++b) {
         const std::string B = " Box" + std::to_string(b) + "ControllerSet";
-        t += B + "Switch=1" + B + "Source=" + std::to_string(kSrc[in(0, 15)]) + B + "Destination=" + std::to_string(kDst[in(0, 10)]) +
+        t += B + "Switch=1" + B + "Source=" + std::to_string(kSrc[in(0, 17)]) + B + "Destination=" + std::to_string(kDst[in(0, 14)]) +
              B + "Polarity=" + std::to_string(in(0, 1)) + B + "Ratio=" + std::to_string(in(0, 255)) +
              B + "CurveType=" + std::to_string(in(0, 2) * in(0, 1) * 2) + B + "CurveParameter1=" + std::to_string(in(0, 10)) +
              B + "CurveParameter2=" + std::to_string(in(0, 4));
@@ -111,10 +111,10 @@ TEST(fuzz_output_stays_finite_and_bounded) {
                 } else ev.push_back(midi(t, 0xB0, uint8_t(kCc[in(r, 0, 5)]), uint8_t(v)));
                 break;
             }
-            case 6: {  // the ribbon or a switch (ids 11-13) jumps; or a destination (14-30) is set anywhere, or modulated far past its range
-                const clap_id id = clap_id(in(r, 11, 30));
+            case 6: {  // the ribbon, a switch or a foot controller (ids 11-13, 38-39) jumps; or a destination (14-37) is set anywhere, or modulated far past its range
+                const clap_id id = clap_id(in(r, 11, 39));
                 clap_param_info_t info{}; a.params->get_info(a.p, id, &info);
-                if (id >= 14 && in(r, 0, 1)) {
+                if (id >= 14 && id <= 37 && in(r, 0, 1)) {
                     clap_event_param_mod_t e{};
                     e.header = {sizeof e, t, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_MOD, 0};
                     e.param_id = id; e.note_id = -1; e.port_index = -1; e.channel = -1; e.key = -1;

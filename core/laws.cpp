@@ -251,6 +251,7 @@ static bool buildLaws() {
         for (int i = 0; i < kHpN; ++i) gLaw.hpGain[k][i] = float(std::pow(10.0, at(Law{kHpTabX[k], kHpTabY[k], kHpTabN[k], 0, 0}, float(i)) / 20));
     for (int i = 0; i <= 494; ++i) gLaw.pitchSemi[i] = float(pitchDepthSemi(i - 247));
     for (int i = 0; i < 512; ++i) gLaw.oscLevel[i] = oscLevel(i);
+    for (int i = 0; i <= 415; ++i) gLaw.lfoHz[i] = float(lfoHz(i));
     for (int i = 0; i < 256; ++i) {
         gLaw.resGain[i] = float(std::pow(10.0, at(Law{kResGainX, kResGainY, kResGainN, 0, 255}, float(i)) / 20));
         gLaw.invTau[TAttack][i] = float(1 / attackTau(i));
@@ -296,7 +297,10 @@ float curveAt(int id, float s) {  // no libm: control rate
 const DestDef kDestDefs[kDests] = {
     {247, 0, 494}, {247, 0, 494}, {511, 0, 511}, {511, 0, 511}, {1023, 0, 1023}, {192, -192, 192}, {255, 0, 255},
     {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {255, 0, 255}, {247, 0, 494},
-    {1023, 0, 1023}, {192, -192, 192}, {255, 0, 255}};  // filter 2's cutoff, EG depth and resonance as filter 1's
+    {1023, 0, 1023}, {192, -192, 192}, {255, 0, 255},  // filter 2's cutoff, EG depth and resonance as filter 1's
+    // va-round6 A1: the pulse width (255), the filter LFO's depth (192), the pitch LFO's speed (415), the oscillators' frequency
+    // (3600 cents: 36 semitones at a full box)
+    {255, 0, 255}, {255, 0, 255}, {192, 64, 448}, {415, 0, 415}, {3600, -3600, 3600}, {3600, -3600, 3600}, {3600, -3600, 3600}};
 
 // The destinations' raw values with the boxes at these source values (src: s 0..1023 per source; knobs 0..1).
 void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, const int16_t* stored, const float* mod) {
@@ -346,6 +350,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.lfoPitch[n] = float(std::copysign(double(at(Law{kLfoDepthX, kLfoDepthY, kLfoDepthN, 0, 247}, float(std::abs(d)))), double(d)) / 100);
     }
     s.lfoCut = float((q[Filter1FilterCutoffLFODepth] - 256) * kLfoCutCentsPerStep / 100);
+    s.lfoCutPerStep = float(kLfoCutCentsPerStep / 100);
     {
         const int a = q[AmplitudeLevelLFODepth] - 128;
         s.lfoAmp = float(std::copysign(double(at(Law{kLfoAmpX, kLfoAmpY, 17, 0, 127}, float(std::abs(a)))) / 6.0206, double(a)));
@@ -411,6 +416,8 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.stored[DFegRelease] = int16_t(q[FilterCutoffEGReleaseTime]); s.stored[DAmpAttack] = int16_t(q[AmplitudeEGAttackTime]);
         s.stored[DAmpDecay] = int16_t(q[AmplitudeEGDecayTime]); s.stored[DAmpRelease] = int16_t(q[AmplitudeEGReleaseTime]);
         s.stored[DPitchDepth3] = int16_t(q[Osc3OscillatorPitchLFODepth]);
+        s.stored[DPw1] = int16_t(q[Osc1OscillatorPulseWidth]); s.stored[DPw2] = int16_t(q[Osc2OscillatorPulseWidth]);
+        s.stored[DLfoCutDepth] = int16_t(q[Filter1FilterCutoffLFODepth]); s.stored[DLfoSpeed] = int16_t(q[PitchLFOSpeed]);
     }
     const int bs = Box2ControllerSetSwitch - Box1ControllerSetSwitch;
     for (int b = 0; b < 16; ++b) {
@@ -435,6 +442,10 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestAmpAttack: aim(DAmpAttack); break;
         case kDestAmpDecay: aim(DAmpDecay); break;
         case kDestAmpRelease: aim(DAmpRelease); break;
+        case kDestPw: for (int n = 0; n < 2; ++n) if (oscOn(n)) aim(Dest(DPw1 + n)); break;
+        case kDestFreq: for (int n = 0; n < 3; ++n) if (oscOn(n)) aim(Dest(DFreq1 + n)); break;
+        case kDestLfoCutDepth: if (f1) aim(DLfoCutDepth); break;  // filter 2 has no cutoff LFO here
+        case kDestPitchLfoSpeed: aim(DLfoSpeed); break;
         default: break;
         }
         if (s.targets == before) continue;

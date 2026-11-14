@@ -25,19 +25,24 @@ constexpr uint32_t kContexts = 8;  // sound contexts (slot 0 is the default soun
 // this sound may keep (1..kVoices).
 // knob1..knob8: the part's knobs 1-8 (raw 0..1023 as 0..1), live: the controller boxes they drive
 // follow at the next control step. A sound starts at its patch's own knob values. Ids are stable (docs/parameters.md).
-// ribbon, switch1, switch2: the part's ribbon and switches 1-2 as controller box sources (0..1 as a 7-bit controller's 0..127).
+// ribbon, switch1, switch2: the part's ribbon and switches 1-2 as controller box sources (0..1 as a 7-bit controller's 0..127);
+// kFoot2, kFootSwitch (after the destinations, not saved: performance controllers, as the MIDI ones): foot controller 2 and the
+// foot switch, the same way (a host passes neither's MIDI controller).
 // The parameters before kStateCount are the shell's values (saved in the state's value list). From kDest0 on: the controller
 // box destinations the core moves (vcore::Dest order), in the patch's raw units: a value event sets the destination, a
 // modulation adds raw steps to it with its boxes (docs/parameters.md); their values live in the raw patch.
 enum Param : uint32_t { kLevel, kPan, kPolyphony, kKnob1, kKnob8 = kKnob1 + 7, kRibbon, kSwitch1, kSwitch2, kStateCount,
-                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::kDests - 1, kParamCount };
+                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::kDests - 1, kFoot2, kFootSwitch, kParamCount };
 struct ParamInfo { const char* name; const char* key; double min, max, def; bool stepped; };
 inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination parameter's raw patch parameter
     vcore::Osc1OscillatorPitchLFODepth, vcore::Osc2OscillatorPitchLFODepth, vcore::Osc1OscillatorOutLevel, vcore::Osc2OscillatorOutLevel,
     vcore::Filter1FilterCutoff, vcore::Filter1FilterCutoffEGDepth, vcore::Filter1FilterResonance, vcore::FilterCutoffEGAttackTime,
     vcore::FilterCutoffEGDecayTime, vcore::FilterCutoffEGReleaseTime, vcore::AmplitudeEGAttackTime, vcore::AmplitudeEGDecayTime,
     vcore::AmplitudeEGReleaseTime, vcore::Osc3OscillatorPitchLFODepth, vcore::Filter2FilterCutoff, vcore::Filter2FilterCutoffEGDepth,
-    vcore::Filter2FilterResonance};
+    vcore::Filter2FilterResonance, vcore::Osc1OscillatorPulseWidth, vcore::Osc2OscillatorPulseWidth, vcore::Filter1FilterCutoffLFODepth,
+    vcore::PitchLFOSpeed, vcore::kParamCount, vcore::kParamCount, vcore::kParamCount};  // kParamCount: no patch parameter (the frequency offsets)
+// Whether a destination parameter is a raw patch parameter (saved with the patch); the frequency offsets are not (they start at 0).
+constexpr bool hasRaw(int d) { return kDestRaw[d] != vcore::kParamCount; }
 inline constexpr double kKnobDefault = 512.0 / 1023;  // the model's default knob value
 inline constexpr ParamInfo kParams[] = {
     {"Level", "level", 0, 1, 1, false}, {"Pan", "pan", -1, 1, 0, false}, {"Polyphony Limit", "polyphony", 1, kVoices, kVoices, true},
@@ -51,7 +56,11 @@ inline constexpr ParamInfo kParams[] = {
     {"Filter EG Depth", "", 64, 448, 256, false}, {"Resonance", "", 0, 255, 0, false}, {"Filter EG Attack", "", 0, 255, 0, false},
     {"Filter EG Decay", "", 0, 255, 160, false}, {"Filter EG Release", "", 0, 255, 160, false}, {"Amp EG Attack", "", 0, 255, 0, false},
     {"Amp EG Decay", "", 0, 255, 115, false}, {"Amp EG Release", "", 0, 255, 160, false}, {"Osc 3 Pitch LFO Depth", "", 0, 494, 247, false},
-    {"Filter 2 Cutoff", "", 0, 1023, 0, false}, {"Filter 2 EG Depth", "", 64, 448, 256, false}, {"Filter 2 Resonance", "", 0, 255, 0, false}};
+    {"Filter 2 Cutoff", "", 0, 1023, 0, false}, {"Filter 2 EG Depth", "", 64, 448, 256, false}, {"Filter 2 Resonance", "", 0, 255, 0, false},
+    {"Osc 1 Pulse Width", "", 0, 255, 128, false}, {"Osc 2 Pulse Width", "", 0, 255, 128, false}, {"Filter LFO Depth", "", 64, 448, 256, false},
+    {"Pitch LFO Speed", "", 0, 415, 208, false}, {"Osc 1 Frequency (cents)", "", -3600, 3600, 0, false},
+    {"Osc 2 Frequency (cents)", "", -3600, 3600, 0, false}, {"Osc 3 Frequency (cents)", "", -3600, 3600, 0, false},
+    {"Foot Controller 2", "foot2", 0, 1, 1, false}, {"Foot Switch", "footswitch", 0, 1, 0, true}};
 static_assert(sizeof kParams / sizeof kParams[0] == kParamCount, "one entry a parameter");
 
 // A float that can be copied (a Patch is copied) and read by one thread while another writes it.

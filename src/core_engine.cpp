@@ -37,7 +37,7 @@ public:
         Entry& e = s.buf[s.back];
         vcore::Patch raw = p.raw;  // the knobs as the shell holds them (they start the sound's boxes)
         for (int k = 0; k < 8; ++k) raw.set(vcore::Param(vcore::PartAssignableKnob1Value + k), int(std::lround(p.p[kKnob1 + k].get() * 1023)));
-        for (int d = 0; d < vcore::kDests; ++d) raw.set(kDestRaw[d], int(std::lround(p.p[kDest0 + d].get())));  // as the shell holds them
+        for (int d = 0; d < vcore::kDests; ++d) if (hasRaw(d)) raw.set(kDestRaw[d], int(std::lround(p.p[kDest0 + d].get())));  // as the shell holds them
         core_.compile(e.sound, raw);
         e.level = p.p[kLevel].get(); e.pan = p.p[kPan].get();
         const auto est = vcore::estimateCost(e.sound.plan);
@@ -57,7 +57,10 @@ public:
         if (c >= kContexts) return;
         sync();  // a sound published before this event is installed first, so the event is not undone
         if (p >= kKnob1 && p <= kKnob8) { core_.setKnob(c, int(p - kKnob1), float(x)); return; }
-        if (p == kRibbon || p == kSwitch1 || p == kSwitch2) { core_.setPanel(c, p == kRibbon ? 6 : p == kSwitch1 ? 16 : 17, float(x)); return; }
+        if (p == kRibbon || p == kSwitch1 || p == kSwitch2 || p == kFoot2 || p == kFootSwitch) {
+            core_.setPanel(c, p == kRibbon ? 6 : p == kSwitch1 ? 16 : p == kSwitch2 ? 17 : p == kFoot2 ? 4 : 5, float(x));
+            return;
+        }
         if (p >= kDest0 && p <= kDestLast) { core_.setDestination(c, int(p - kDest0), int(std::lround(x))); return; }
         if (p == kLevel) level_[c] = float(x);
         else if (p == kPan) pan_[c] = float(x);

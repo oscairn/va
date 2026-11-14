@@ -676,6 +676,52 @@ static void testPitchLfo() {
     CHECK(before < 5 && after > 60);  // the zero-crossing estimate scatters about 2 cents
 }
 
+// Controller box destinations against the reference (va-round6 A1: knob 1 at 1023 through a unipolar linear box, a saw or square at key
+// 36): the oscillators' frequency (123) +8 -> +450.00 cents and -32 -> -1800.00 cents (36 semitones at a full box); the pulse width
+// (125) +16 from 128 -> h2/h1 0.6965 (63 raw steps: span 255); the pitch LFO's speed (401) +16 from 150 -> 17.50 Hz (span 415).
+static double meanHz(const std::vector<float>& L, size_t from) {
+    std::vector<double> z;
+    for (size_t i = from; i + 1 < L.size(); ++i) if (L[i] < 0 && L[i + 1] >= 0) z.push_back(double(i) + L[i] / (L[i] - L[i + 1]));
+    return z.size() < 2 ? 0 : 44100 * double(z.size() - 1) / (z.back() - z.front());
+}
+static void testBoxDestinations() {
+    const std::string box = "PartAssignableKnob1Value=1023 Box1ControllerSetSwitch=1 Box1ControllerSetSource=8 Box1ControllerSetPolarity=0 ";
+    double h[2]; std::vector<float> L;
+    const double base = 440 * std::exp2((36 - 69) / 12.0);
+    for (const auto& c : {std::pair<int, double>{136, 450.0}, {96, -1800.0}}) {
+        harmonics((box + "Box1ControllerSetDestination=123 Box1ControllerSetRatio=" + std::to_string(c.first) +
+                   " Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511").c_str(), 36, h, 1, 4410, 44100, &L);
+        const double cents = 1200 * std::log2(meanHz(L, 4410) / base);
+        std::printf("box on the frequency, ratio %+d: %+.2f cents (reference %+.2f)\n", c.first - 128, cents, c.second);
+        CHECK(std::fabs(cents - c.second) < 1.0);
+    }
+    harmonics((box + "Box1ControllerSetDestination=125 Box1ControllerSetRatio=144 Osc1OscillatorWave=2 Osc1OscillatorOutLevel=511").c_str(), 36, h, 2);
+    const double r = std::pow(10, (h[1] - h[0]) / 20);
+    std::printf("box on the pulse width, ratio +16: h2/h1 %.4f (reference 0.6965)\n", r);
+    CHECK(std::fabs(r - 0.6965) < 0.01);
+    harmonics((box + "Box1ControllerSetDestination=401 Box1ControllerSetRatio=144 Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 "
+               "Osc1OscillatorPitchLFODepth=300 PitchLFOWave=3 PitchLFOSpeed=150 PitchLFOKeyOnReset=1").c_str(), 84, h, 1, 4410, 88200, &L);
+    std::vector<double> z;  // the LFO's rate from the period sequence's upward crossings of its mean
+    for (size_t i = 4410; i + 1 < L.size(); ++i) if (L[i] < 0 && L[i + 1] >= 0) z.push_back(double(i) + L[i] / (L[i] - L[i + 1]));
+    std::vector<double> per; for (size_t i = 1; i < z.size(); ++i) per.push_back(z[i] - z[i - 1]);
+    double m = 0; for (double x : per) m += x; m /= double(per.size());
+    int up = 0; double first = 0, last = 0;
+    for (size_t i = 1; i < per.size(); ++i) if (per[i - 1] >= m && per[i] < m) { if (!up) first = z[i]; last = z[i]; ++up; }
+    const double hz = up > 1 ? 44100 * (up - 1) / (last - first) : 0;
+    std::printf("box on the pitch LFO's speed, ratio +16: %.2f Hz (reference 17.50)\n", hz);
+    CHECK(std::fabs(hz / 17.50 - 1) < 0.02);
+    // the filter LFO's depth (144): +16 from 256 sounds as the static depth 304 (span 192: the reference's swings at +16 / +32 fall
+    // between its static depths 256-320 / 320-384 where 304 / 352 predict them)
+    const std::string flt = "Osc1OscillatorWave=0 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=500 FilterCutoffLFOWave=3 "
+                            "FilterCutoffLFOSpeed=120 FilterCutoffLFOKeyOnReset=1 ";
+    std::vector<float> a1, b1;
+    harmonics((box + flt + "Box1ControllerSetDestination=144 Box1ControllerSetRatio=144 Filter1FilterCutoffLFODepth=256").c_str(), 36, h, 1, 4410, 44100, &a1);
+    harmonics((flt + "Filter1FilterCutoffLFODepth=304").c_str(), 36, h, 1, 4410, 44100, &b1);
+    double d = 0, e = 0; for (size_t i = 0; i < a1.size(); ++i) { d += double(a1[i] - b1[i]) * (a1[i] - b1[i]); e += double(b1[i]) * b1[i]; }
+    std::printf("box on the filter LFO depth, ratio +16, against the static depth 304: %.2e relative\n", std::sqrt(d / (e + 1e-30)));
+    CHECK(e > 0 && d < 1e-10 * e);
+}
+
 static void testStatistics() {
     const auto x = renderProbeA(2, 1, 128);
     const size_t half = x.size() / 2, win = 4800;
@@ -700,7 +746,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

@@ -134,12 +134,23 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         case kDestAmpAttack: d[nd++] = DAmpAttack; break;
         case kDestAmpDecay: d[nd++] = DAmpDecay; break;
         case kDestAmpRelease: d[nd++] = DAmpRelease; break;
+        case kDestFreq: for (int n = 0; n < 3; ++n) if (oscOn(n)) d[nd++] = Dest(DFreq1 + n); break;
+        case kDestPw:
+            for (int n = 0; n < 2; ++n) if (oscOn(n)) d[nd++] = Dest(DPw1 + n);
+            if (oscOn(2)) g.add(box(b, Box1ControllerSetDestination), "controller box on oscillator 3's pulse width: not built");
+            break;
+        case kDestLfoCutDepth:
+            if (f1) d[nd++] = DLfoCutDepth;
+            if (f2) g.add(box(b, Box1ControllerSetDestination), "controller box on filter 2's cutoff LFO depth: not measured");
+            break;
+        case kDestPitchLfoSpeed: d[nd++] = DLfoSpeed; break;
         default: g.add(box(b, Box1ControllerSetDestination), "controller box destination: not built"); continue;
         }
         if (!nd) continue;  // reaches no unit that sounds
         const bool knob = src >= 8 && src <= 15;
         if (src == 2) { g.add(box(b, Box1ControllerSetSource), "controller box source aftertouch: its value map not measured (the recorder cannot send channel pressure)"); continue; }
-        if (src == 4 || src == 5 || src >= kSources) { g.add(box(b, Box1ControllerSetSource), "controller box source: not built (foot controller 2, foot switch, sequenced and envelope-following sources)"); continue; }
+        if (src == 4 || src == 5) { g.add(box(b, Box1ControllerSetSource), "controller box source foot controller 2 / foot switch: their rest values measured (top / 0), their value map not"); continue; }
+        if (src >= kSources) { g.add(box(b, Box1ControllerSetSource), "controller box source: not built (sequenced and envelope-following sources)"); continue; }
         const int curve = findCurve(q[box(b, Box1ControllerSetCurveBank)], q[box(b, Box1ControllerSetCurveType)],
                                     q[box(b, Box1ControllerSetCurveParameter1)], q[box(b, Box1ControllerSetCurveParameter2)]);
         if (curve < 0) { g.add(box(b, Box1ControllerSetCurveType), "controller box curve: not measured"); continue; }
@@ -168,7 +179,8 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
                             q[Filter1FilterCutoffEGDepth] - 256 + 3 * (q[PartFEGDepth] - 64), q[Filter1FilterResonance], q[FilterCutoffEGAttackTime],
                             q[FilterCutoffEGDecayTime], q[FilterCutoffEGReleaseTime], q[AmplitudeEGAttackTime], q[AmplitudeEGDecayTime],
                             q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth], q[Filter2FilterCutoff], q[Filter2FilterCutoffEGDepth] - 256,
-                            q[Filter2FilterResonance]};
+                            q[Filter2FilterResonance], q[Osc1OscillatorPulseWidth], q[Osc2OscillatorPulseWidth], q[Filter1FilterCutoffLFODepth],
+                            q[PitchLFOSpeed], 0, 0, 0};
     for (int d = 0; d < kDests; ++d) {
         auto at = [&](float t) {
             t = t < -8192 ? -8192 : t > 8192 ? 8192 : t;
@@ -290,7 +302,10 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         g.need(q, FilterCutoffLFOWave, 3, 3, "filter LFO wave: only the sine verified on the filter LFO");
         g.need(q, FilterCutoffLFODelayTime, 0, 0, "filter LFO delay: not measured on the filter LFO");
         g.need(q, FilterCutoffLFOFadeInTime, 0, 0, "filter LFO fade-in: not measured on the filter LFO");
+        if (r.moved[DLfoCutDepth] && (r.lo[DLfoCutDepth] < 216 || r.hi[DLfoCutDepth] > 296))
+            g.add(Filter1FilterCutoffLFODepth, "filter LFO depth (with its boxes): verified up to 40 steps from 256");
     }
+    if (d.lfo[0] && r.moved[DLfoSpeed] && r.hi[DLfoSpeed] > 320) g.add(PitchLFOSpeed, "pitch LFO speed (with its boxes) over 320: audio rate, not built");
     if (d.lfo[2]) {
         g.need(q, AmplitudeLFOSpeed, 0, 320, "amplitude LFO speed over 320: audio rate, not built");
         g.need(q, AmplitudeLFOWave, 3, 3, "amplitude LFO wave: only the sine's phase is measured");
@@ -350,8 +365,15 @@ bool highPassAsGain(const Patch& q) {
 PlanDesc describe(const Patch& q) {
     PlanDesc d{};
     // a table read for every wave but a pulse whose width is not 0.5 or moves (oscillator 3: a table read always; its LFO not built)
+    // a box (ratio not 0) on a destination, reaching oscillator n (its switch for the box on), or any unit (n < 0)
+    auto boxOn = [&](int dest, int n) {
+        for (int b = 0; b < 16; ++b)
+            if (q[box(b, Box1ControllerSetSwitch)] && q[box(b, Box1ControllerSetRatio)] != 128 && q[box(b, Box1ControllerSetDestination)] == dest &&
+                (n < 0 || q[Param(osc(n, Osc1OscillatorControllerSet1Switch) + b)])) return true;
+        return false;
+    };
     for (int n = 0; n < 3; ++n) {
-        const bool pwm = n < 2 && q[osc(n, Osc1OscillatorPulseWidthLFODepth)] != 128;
+        const bool pwm = n < 2 && (q[osc(n, Osc1OscillatorPulseWidthLFODepth)] != 128 || boxOn(kDestPw, n));  // the width moves
         d.osc[n] = !q[osc(n, Osc1OscillatorOutLevel)] ? Wave::Off
                  : q[osc(n, Osc1OscillatorWave)] == 2 && n < 2 && (q[osc(n, Osc1OscillatorPulseWidth)] != 128 || pwm) ? Wave::Pulse : Wave::Saw;
         if (n < 2) d.oscLfo[n] = d.osc[n] == Wave::Pulse && pwm;
@@ -362,7 +384,7 @@ PlanDesc describe(const Patch& q) {
     for (int b = 0; b < 16; ++b)  // a box on an oscillator's pitch LFO depth
         if (q[box(b, Box1ControllerSetSwitch)] && q[box(b, Box1ControllerSetDestination)] == kDestPitchDepth)
             for (int n = 0; n < 3; ++n) d.lfo[0] |= d.osc[n] != Wave::Off && q[Param(osc(n, Osc1OscillatorControllerSet1Switch) + b)];
-    d.lfo[1] = d.filter[0] && q[Filter1FilterCutoffLFODepth] != 256;
+    d.lfo[1] = d.filter[0] && (q[Filter1FilterCutoffLFODepth] != 256 || boxOn(kDestLfoCutDepth, -1));
     for (int b = 0; b < 16; ++b) d.boxes += q[box(b, Box1ControllerSetSwitch)] ? 1 : 0;
     d.lfo[2] = q[AmplitudeLevelLFODepth] != 128;
     auto add = [&](Stage s) { d.stage[d.count++] = s; };

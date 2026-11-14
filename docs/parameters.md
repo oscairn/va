@@ -11,7 +11,9 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 | 3-10 | Knob 1-8 | `knob1`..`knob8` | 0..1 | the patch's own value (raw `PartAssignableKnobNValue` / 1023; model default 512) | the part's knob N, live |
 | 11 | Ribbon | `ribbon` | 0..1 | 0 | the ribbon as a controller box source (source 6), live; the box sees v = round(value x 127) through the 7-bit map (below) |
 | 12, 13 | Switch 1, Switch 2 | `switch1`, `switch2` | 0 or 1, stepped | 0 | switches 1-2 as box sources (16, 17): 0 or 1024 |
-| 14-30 | the controller box destinations | none (the raw patch's own parameters) | the raw parameter's range | the model's default; shows the sound's own value | below; modulatable |
+| 14-37 | the controller box destinations | none (the raw patch's own parameters) | the raw parameter's range | the model's default; shows the sound's own value | below; modulatable |
+| 38 | Foot Controller 2 | `foot2` | 0..1 | 1 | foot controller 2 as a box source (4), as the ribbon; not saved (a performance controller, as the MIDI ones) |
+| 39 | Foot Switch | `footswitch` | 0 or 1, stepped | 0 | the foot switch as a box source (5): 0 or 1024; not saved |
 
 The knobs, the ribbon and the switches are what the reference's controller boxes read (box sources 8-15 = knobs 1-8). A change takes
 effect at the next control step of the core (at most 16 frames). Whatever the boxes add, the cutoff stops at the
@@ -23,7 +25,7 @@ parameters, the ribbon and the switches with the other values (`oscairn-va-state
 values are ids 0-13; the formats before them are not read). A host never passes the ribbon's or the switches' MIDI controllers
 (CC 16, 86, 87) to a plugin, so they are parameters, as the knobs.
 
-## Controller box destinations (ids 14-30)
+## Controller box destinations (ids 14-37)
 
 Every destination the core's boxes move is also a parameter, flagged `CLAP_PARAM_IS_MODULATABLE`, so that a converter can map a
 plain source-to-destination box onto the host's control tree with a host-side curve instead of an in-engine box. Its value is
@@ -47,6 +49,10 @@ the sound slot until the host changes it; a modulation for one note (a note id o
 | 28 | Filter 2 Cutoff | `Filter2FilterCutoff` (the part's cutoff offset is not added: on filter 2 it is not measured) | 0-1023 | 1023 |
 | 29 | Filter 2 EG Depth | `Filter2FilterCutoffEGDepth` | 64-448 | 192 |
 | 30 | Filter 2 Resonance | `Filter2FilterResonance` | 0-255 | 255 |
+| 31, 32 | Osc 1 / Osc 2 Pulse Width | `Osc1OscillatorPulseWidth`, `Osc2...` (a moved width plays the pulse as two table reads) | 0-255 | 255 |
+| 33 | Filter LFO Depth | `Filter1FilterCutoffLFODepth` | 64-448 | 192 |
+| 34 | Pitch LFO Speed | `PitchLFOSpeed` | 0-415 | 415 |
+| 35-37 | Osc 1-3 Frequency (cents) | none: an offset from 0 in cents, not saved with the patch (a value event holds until the next sound load) | -3600..3600 | 3600 |
 
 For a linear box (curve Standard 5) both paths give the same result: the ABI test plays the mod wheel at 127 through a box of
 ratio +8 on the cutoff and a modulation of 127.875 steps, bit for bit the same. In-engine boxes stay for what a host curve does
@@ -79,8 +85,9 @@ in the reference (its foot controllers are CC 11 and, for the second, a control 
 
 CC 121 (reset all controllers) puts the channel's sources at their rest values: the foot controllers and breath at the
 top, the others at 0, the bend centred (the reference's reset; the rest values themselves are taken from its documentation,
-not measured). Foot controller 2 (the reference drives a Performance-level macro control with it), the foot switch, the sequenced
-sources and the envelope-following sources are not built. In the reference CC 11 is also expression (the part's volume); the shell does not
+not measured). Foot controller 2 and the foot switch are parameters 38 and 39 (a host passes neither's MIDI controller; va-round6 A1: the reference
+rests at the top and at 0 for them, as a box on the cutoff showed, and took neither CC 95 / 96 nor CC 88 in that probe, so their value
+map is not measured and a box reading them is reported). The sequenced sources and the envelope-following sources are not built. In the reference CC 11 is also expression (the part's volume); the shell does not
 apply expression.
 
 The 7-bit map (va-round5 C1): the mod wheel through a +32 box on the cutoff (LPF12, the section's F read exactly) lands on the

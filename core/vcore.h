@@ -98,7 +98,7 @@ public:
     void setVolume(uint32_t voice, float gain);       // the note's volume expression, linear
     void setPitchBend(int channel, float value);      // -1..1 of the patch's bend range (also the boxes' source 0)
     // A channel's controller as a controller box source (vcore source numbers: 1 mod wheel, 2 aftertouch, 3 foot controller 1,
-    // 4 foot controller 2, 5 foot switch, 7 breath), 0..1 (a 7-bit controller is value / 127). A sound's boxes read the
+    // 7 breath), 0..1 (a 7-bit controller is value / 127). A sound's boxes read the
     // channel of its latest note. The ribbon (6) and switches 1-2 (16-17) are the sound's own (setPanel), as the knobs. reset() puts every controller at its rest value
     // (the reference's reset: foot controllers and breath at the top, the others at 0, the bend centred).
     void setController(int channel, int source, float value);
@@ -106,9 +106,9 @@ public:
     // A sound's knob k (0..7) now, 0..1 (raw 0..1023): the controller boxes it drives follow at the
     // next control step. install() starts a sound at its patch's own knob values.
     void setKnob(uint32_t sound, int k, float value);
-    // A sound's ribbon (source 6) or switch 1-2 (sources 16-17) now, 0..1 (as a 7-bit controller: v = value x 127, then the map of
-    // setController);
-    // other sources are ignored. They rest at 0; install() keeps them.
+    // A sound's ribbon (source 6), switch 1-2 (sources 16-17), foot controller 2 (4) or foot switch (5) now, 0..1 (as a 7-bit
+    // controller: v = value x 127, then the map of setController); other sources are ignored. They rest at 0 (foot controller 2 at
+    // the top, as the reference's reset); install() keeps them.
     void setPanel(uint32_t sound, int source, float value);
     // A controller box destination of a sound (vcore::Dest) moved from outside the boxes: setDestination sets its value
     // (the patch's raw value, e.g. Filter1FilterCutoff 0-1023, Filter1FilterCutoffEGDepth 64-448) until the next install;
@@ -144,7 +144,7 @@ private:
     uint32_t rng_ = 0x9e3779b9u;
     float bend_[16] = {};
     float knob_[kMaxSounds][8] = {};
-    float panel_[kMaxSounds][3] = {};       // ribbon, switch 1, switch 2: 0..1023
+    float panel_[kMaxSounds][5] = {};       // ribbon, switch 1, switch 2, foot controller 2, foot switch: 0..1024
     int16_t dest_[kMaxSounds][kDests] = {}; // each destination's value before the boxes (install: the patch's)
     float mod_[kMaxSounds][kDests] = {};    // modulations, in box output units (+-8192 a full box)
     bool live_[kMaxSounds] = {};

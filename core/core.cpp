@@ -20,6 +20,8 @@ struct Ctl {  // one sound's constants for one control step of n frames
     float piOverSr;
     float cut[2], feg[2], res[2];             // each filter's cutoff, EG move at level 1 (semitones) and resonance, with the boxes now
     float lfoPitch[3], osc[3];                // pitch LFO depth (semitones), oscillator out level (linear)
+    float freq[3], pwRaw[2], lfoCut, lfoRate; // the boxes' frequency offsets (semitones), pulse widths (raw), filter LFO depth
+                                              // (semitones), pitch LFO speed (cycles a frame)
     alignas(16) float bend[16];               // semitones per channel
 };
 
@@ -224,9 +226,9 @@ VC_INLINE float unitRand(uint32_t& r) { r ^= r << 13; r ^= r >> 17; r ^= r << 5;
 
 // ---- LFOs (control rate) ------------------------------------------------------------------------
 // One LFO of a lane advanced over the step: its value at the step's end (-1..1); m: its delay and fade-in level.
-VC_INLINE vf lfoStep(const Lane& l, const Lfo& o, int n, int LP, int LR, vf t, vf& m) {
+VC_INLINE vf lfoStep(const Lane& l, const Lfo& o, float rate, int n, int LP, int LR, vf t, vf& m) {
     const vf one = splat(1.f);
-    vf ph = l(LP) + splat(float(n) * o.rate);
+    vf ph = l(LP) + splat(float(n) * rate);
     const vm wrapped = ph >= one;
     ph = ph - vfloor(ph);
     l.set(LP, ph);
@@ -317,20 +319,20 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
         l.set(LT, t);
         vf m;
         if (s.plan.lfo[0]) {
-            vf v = lfoStep(l, s.lfo[0], c.n, LP0, LR0, t, m);  // m is the call's output: read only after it (argument order is unspecified)
+            vf v = lfoStep(l, s.lfo[0], c.lfoRate, c.n, LP0, LR0, t, m);  // m is the call's output: read only after it (argument order is unspecified)
             v = v * m;
             lp1 = v * splat(c.lfoPitch[0]); lp2 = v * splat(c.lfoPitch[1]); lp3 = v * splat(c.lfoPitch[2]);
         }
         for (int o = 0; o < 2; ++o)  // the pulse width, moved by the oscillator's own LFO: raw + depth x value through the width law
             if (s.plan.oscLfo[o]) {
-                vf v = lfoStep(l, s.oscLfo[o], c.n, LO1 + o, LOR1 + o, t, m);
+                vf v = lfoStep(l, s.oscLfo[o], s.oscLfo[o].rate, c.n, LO1 + o, LOR1 + o, t, m);
                 v = v * m;
-                const vf w = vmax(vmin(fma(fma(v, splat(s.pwDepth[o]), splat(s.pwRaw[o])), splat(0.98f / 256.f), splat(0.01f)), splat(0.99f)), splat(0.01f));
+                const vf w = vmax(vmin(fma(fma(v, splat(s.pwDepth[o]), splat(c.pwRaw[o])), splat(0.98f / 256.f), splat(0.01f)), splat(0.99f)), splat(0.01f));
                 l.ramp(PW1 + 2 * o, DPW1 + 2 * o, w, fresh, rn);
             }
-        if (s.plan.lfo[1]) { const vf v = lfoStep(l, s.lfo[1], c.n, LP1, LR1, t, m); lcut = v * m * splat(s.lfoCut); }
+        if (s.plan.lfo[1]) { const vf v = lfoStep(l, s.lfo[1], s.lfo[1].rate, c.n, LP1, LR1, t, m); lcut = v * m * splat(c.lfoCut); }
         // amplitude: dB = -depth (1 - value): the top is the level (measured); the delay and fade-in scale the depth (not measured)
-        if (s.plan.lfo[2]) { const vf v = lfoStep(l, s.lfo[2], c.n, LP2, LR2, t, m); lamp = (v * splat(s.lfoAmp) - splat(s.lfoAmp < 0 ? -s.lfoAmp : s.lfoAmp)) * m; }
+        if (s.plan.lfo[2]) { const vf v = lfoStep(l, s.lfo[2], s.lfo[2].rate, c.n, LP2, LR2, t, m); lamp = (v * splat(s.lfoAmp) - splat(s.lfoAmp < 0 ? -s.lfoAmp : s.lfoAmp)) * m; }
     }
     // drift: advance each oscillator's knot phase; a new uniform knot when it wraps (per lane, control rate)
     for (int i = 0; i < W; ++i) {
@@ -345,14 +347,15 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     }
     const vf amp = splat(s.driftAmp);
     const vf dt1 = fma(amp, fma(l(DB1) - l(DA1), l(DP1), l(DA1)), l(DS1)), dt2 = fma(amp, fma(l(DB2) - l(DA2), l(DP2), l(DA2)), l(DS2));
-    const vf lg1 = fma(semis + dt1 + lp1, splat(1.f / 12), splat(s.pitch[0])), lg2 = fma(semis + dt2 + lp2, splat(1.f / 12), splat(s.pitch[1]));
+    const vf lg1 = fma(semis + dt1 + lp1 + splat(c.freq[0]), splat(1.f / 12), splat(s.pitch[0]));
+    const vf lg2 = fma(semis + dt2 + lp2 + splat(c.freq[1]), splat(1.f / 12), splat(s.pitch[1]));
     l.ramp(INC1, DINC1, vmin(exp2v(lg1), splat(0.45f)), fresh, rn);
     l.ramp(INC2, DINC2, vmin(exp2v(lg2), splat(0.45f)), fresh, rn);
     level(l, TA1, TB1, TW1, DTW1, lg1, s.tabU, s.stride[0], fresh, rn);
     level(l, TA2, TB2, TW2, DTW2, lg2, s.tabU, s.stride[1], fresh, rn);
     if constexpr (O3) {
         const vf dt3 = fma(amp, fma(l(DB3) - l(DA3), l(DP3), l(DA3)), l(DS3));
-        const vf lg3 = fma(semis + dt3 + lp3, splat(1.f / 12), splat(s.pitch[2]));
+        const vf lg3 = fma(semis + dt3 + lp3 + splat(c.freq[2]), splat(1.f / 12), splat(s.pitch[2]));
         l.ramp(INC3, DINC3, vmin(exp2v(lg3), splat(0.45f)), fresh, rn);
         level(l, TA3, TB3, TW3, DTW3, lg3, s.tabU, s.stride[2], fresh, rn);
     }
@@ -455,6 +458,7 @@ void clearPos(Pool& p, uint32_t i) {
 Core::Core() {
     (void)bandTables();  // built once per process, here on the caller's thread, never in render
     (void)lawTables();
+    for (auto& p : panel_) p[3] = 1024;  // foot controller 2 rests at the top
     reset();
 }
 
@@ -492,7 +496,7 @@ static float sevenBit(float x) {
 }
 
 void Core::setPanel(uint32_t i, int source, float x) {
-    const int k = source == 6 ? 0 : source == 16 ? 1 : source == 17 ? 2 : -1;
+    const int k = source == 6 ? 0 : source == 16 ? 1 : source == 17 ? 2 : source == 4 ? 3 : source == 5 ? 4 : -1;
     if (i < kMaxSounds && k >= 0) panel_[i][k] = sevenBit(x);
 }
 
@@ -700,7 +704,7 @@ void Core::setPitchBend(int ch, float x) {
     src_[ch][0] = v > 1023.f ? 1023.f : v;
 }
 void Core::setController(int ch, int source, float x) {
-    if (ch < 0 || ch >= 16 || source <= 0 || source >= kSources || source == 6 || source >= 8) return;  // knobs, ribbon, switches: the sound's
+    if (ch < 0 || ch >= 16 || source <= 0 || source >= kSources || source == 4 || source == 5 || source == 6 || source >= 8) return;  // the sound's
     src_[ch][source] = sevenBit(x);
 }
 
@@ -754,11 +758,12 @@ void Core::render(float* L, float* R, uint32_t frames) {
             for (int f = 0; f < 2; ++f) { c.cut[f] = s.flt[f].cut; c.feg[f] = s.flt[f].feg; c.res[f] = s.flt[f].res; }
             c.lfoPitch[0] = s.lfoPitch[0]; c.lfoPitch[1] = s.lfoPitch[1]; c.lfoPitch[2] = s.lfoPitch[2];
             c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
+            c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut; c.lfoRate = s.lfo[0].rate;
             if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
                 int16_t raw[kDests];
                 float src[kSources];
                 for (int k = 0; k < kSources; ++k) src[k] = src_[chan_[si]][k];
-                src[6] = panel_[si][0]; src[16] = panel_[si][1]; src[17] = panel_[si][2];
+                src[6] = panel_[si][0]; src[16] = panel_[si][1]; src[17] = panel_[si][2]; src[4] = panel_[si][3]; src[5] = panel_[si][4];
                 boxRaw(s, src, knob_[si], raw, dest_[si], mod_[si]);
                 const LawTables& t = lawTables();
                 c.lfoPitch[0] = t.pitchSemi[raw[DPitchDepth1]]; c.lfoPitch[1] = t.pitchSemi[raw[DPitchDepth2]]; c.lfoPitch[2] = t.pitchSemi[raw[DPitchDepth3]];
@@ -771,6 +776,10 @@ void Core::render(float* L, float* R, uint32_t frames) {
                     c.feg[f] = kFegSemisPerStep * (steps < -192.f ? -192.f : steps > 192.f ? 192.f : steps);
                     c.res[f] = float(raw[dr]);
                 }
+                for (int n = 0; n < 3; ++n) c.freq[n] = float(raw[DFreq1 + n]) * 0.01f;
+                c.pwRaw[0] = float(raw[DPw1]); c.pwRaw[1] = float(raw[DPw2]);
+                if (raw[DLfoCutDepth] != s.stored[DLfoCutDepth]) c.lfoCut = float(raw[DLfoCutDepth] - 256) * s.lfoCutPerStep;
+                if (raw[DLfoSpeed] != s.stored[DLfoSpeed]) { const float r = t.lfoHz[raw[DLfoSpeed]] * float(1 / sr_); c.lfoRate = r < kLfoMaxRate ? r : kLfoMaxRate; }
                 const float k = -s.invSrLn2;
                 auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };
                 la = tau(TAttack, DAmpAttack, la); ld = tau(TAmpDecay, DAmpDecay, ld);

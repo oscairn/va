@@ -59,7 +59,7 @@ TEST(param_mod_on_a_destination_equals_the_linear_box) {
 }
 
 // Every live source the host passes, at the same 7-bit value, drives its box as the mod wheel does: breath (CC 2), pitch bend
-// (8192: the box sees 8192 / 16 = 512, as CC value 64 through the 7-bit map), pressure (64 / 127), and the ribbon and switch parameters. The ribbon's and the
+// (8192: the box sees 8192 / 16 = 512, as CC value 64 through the 7-bit map), pressure (64 / 127), and the ribbon, switch and foot parameters. The ribbon's and the
 // switches' CCs (16, 86, 87) never reach a plugin in the host and move nothing.
 TEST(sources_drive_their_boxes) {
     const auto wheel = play(kBase + box(1), {midi(0, 0xB0, 1, 64)});
@@ -67,7 +67,8 @@ TEST(sources_drive_their_boxes) {
     CHECK(rmsDiff(wheel, none) > 0.05);
     const struct { const char* what; int source; std::vector<Bytes> ev; } cases[] = {
         {"breath", 7, {midi(0, 0xB0, 2, 64)}}, {"pitch bend", 0, {midi(0, 0xE0, 0, 64)}}, {"pressure", 2, {pressure(0, 0, -1, 64 / 127.0)}},
-        {"channel pressure", 2, {midi(0, 0xD0, 64, 0)}}, {"ribbon", 6, {param(0, 11, 64 / 127.0)}}};
+        {"channel pressure", 2, {midi(0, 0xD0, 64, 0)}}, {"ribbon", 6, {param(0, 11, 64 / 127.0)}},
+        {"foot controller 2", 4, {param(0, 38, 64 / 127.0)}}};
     for (const auto& c : cases) {
         const double d = rmsDiff(play(kBase + box(c.source), c.ev), wheel);
         std::printf("  %s against the mod wheel: %.2e\n", c.what, d);
@@ -75,6 +76,8 @@ TEST(sources_drive_their_boxes) {
     }
     const auto sw = play(kBase + box(16), {param(0, 12, 1.0)}), wheelTop = play(kBase + box(1), {midi(0, 0xB0, 1, 127)});
     CHECK(rmsDiff(sw, wheelTop) < 1e-6 && rmsDiff(play(kBase + box(17), {param(0, 13, 1.0)}), wheelTop) < 1e-6);
+    CHECK(rmsDiff(play(kBase + box(5), {param(0, 39, 1.0)}), wheelTop) < 1e-6);  // the foot switch
+    CHECK(rmsDiff(play(kBase + box(4), {}), wheelTop) < 1e-6);                    // foot controller 2 rests at the top
     const auto off = play(kBase + box(6), {});
     CHECK(rmsDiff(play(kBase + box(6), {midi(0, 0xB0, 16, 127)}), off) < 1e-6);
     CHECK(rmsDiff(play(kBase + box(16), {midi(0, 0xB0, 86, 127)}), off) < 1e-6);
