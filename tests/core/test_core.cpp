@@ -185,6 +185,21 @@ static void testCutoffAgainstReference() {
     CHECK(p[Filter1FilterCutoff] == 1023 && std::exp2(s.flt[0].cut / 12) > 20000);  // the default is open
 }
 
+// The absolute level at part volume 127 (the host applies the part's volume): one held saw (key 60, out level 511, filters thru,
+// amplitude level 511) reads -20.150 dB (power of both channels, 0.5-1.5 s; va-round5 V1, three takes within 0.01 dB; at part
+// volume 100 -24.27 dB, where the earlier calibration was fitted).
+static void testCalibration() {
+    Patch p; char e[200];
+    readPatch("vcore-patch/1 VoltageDrift=0 AmplitudeEGAttackTime=0 AmplitudeLevel=511 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 "
+              "Osc1OscillatorWave=0 Osc1OscillatorOutLevel=511 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Filter1FilterType=0 Filter2FilterType=0", p, e, sizeof e);
+    auto core = std::make_unique<Core>(); core->prepare(44100); core->load(0, p); core->setGain(0, 1, 0); core->noteOn(0, 0, 0, 60, 100.f / 127);
+    std::vector<float> L(66150), R(L.size()); core->render(L.data(), R.data(), uint32_t(L.size()));
+    double sum = 0; for (size_t i = 22050; i < 66150; ++i) sum += 0.5 * (double(L[i]) * L[i] + double(R[i]) * R[i]);
+    const double db = 10 * std::log10(sum / 44100);
+    std::printf("level at part volume 127: %.3f dB (reference -20.150)\n", db);
+    CHECK(std::fabs(db + 20.150) < 0.05);
+}
+
 // The filter types against the reference (va-round5 F1): a saw of 32.7 Hz (key 36, 16') held through one filter, each harmonic's
 // level re the same saw through thru (dB), at harmonics 1, 2, 4, ... 512; the engine renders the same at 44.1 kHz. The earlier
 // engine had no LPF18 / LPF12 / LPF6 (thru), its LPF24 law was 2-4 dB off at 840-900 and its HPF24 a fixed stand-in.
@@ -657,7 +672,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

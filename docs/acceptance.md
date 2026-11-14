@@ -35,9 +35,21 @@ accept-probeA-round5; the same analysis and reference takes as round 4, 24 engin
 | level, mean power | 84 / 88 / 90 / 91 / 96 | | -0.8 / +0.8 / -0.5 / **+1.8** / -1.1 dB | | 1.5 dB | pass, FAIL at 91 |
 | release rate (-20 to -60 dB) | all five | 84.2-85.6 dB/s | 82.9-83.1 | -1.8 to -3.1 % | 5 % | pass |
 
-The calibration constant rose by 0.65 dB: the core now applies filter 2's HPF24 (at cutoff 0 a pass-band gain of -0.65 dB, va-round5
-F3), which the earlier calibration on probe A had absorbed. Attack, decay, voice end and pitch rows are as in round 4 within their
-printed precision.
+(These rows were taken before the calibration below.) Attack, decay, voice end and pitch rows are as in round 4 within their printed
+precision.
+
+**Level is referred to part volume 127** (round 5). The host applies the part's volume; the reference recordings of the earlier
+rounds were made at part volume 100, 4.12 dB under 127 (va-round5 V1: one held saw at volumes 127 / 100 / 64 reads -20.150 /
+-24.269 / -32.145 dB, three takes each within 0.01 dB; the host's law (volume / 127)^2 gives -4.125 and -11.90 dB). The calibration
+constant is now fitted on that saw at volume 127 (the engine within 0.003 dB, tests/core): +3.91 dB over the round 4 constant, which
+had been fitted on probe A at volume 100 (it includes the -0.65 dB of filter 2's HPF24 at cutoff 0, applied by the core since round 5).
+Every level row in this document recorded at volume 100 is read with the reference raised by 4.12 dB: the engine-minus-reference level
+differences of the tables above and below move by -0.21 dB (probe A, round 5 rerun: -1.0 / +0.6 / -0.7 / **+1.6** / -1.3 dB at keys
+84 / 88 / 90 / 91 / 96, tolerance 1.5 dB: pass, FAIL at 91). Relative laws (oscillator levels re 511, the waves re the saw, the filters
+re thru, the amplitude LFO) are unaffected. Cross-check: probe A at volume 127 (run va-diag-volume, 6 notes at key 84) reads -30.54 dB
+mean power 0.1-0.6 s after the note-on against the engine's -33.71 (24 seeds): -3.2 dB, outside the per-note scatter (+-1.5 dB)
+expected for 6 notes; the same batch's volume 100 notes read -36.21 (engine -37.62 at volume 100: -1.4 dB), a volume step of 5.67 dB
+against the clean probe's 4.12. Not explained; the clean single-oscillator probe is taken as the calibration.
 
 # Acceptance: the filters against the reference (round 5)
 

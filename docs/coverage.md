@@ -47,7 +47,7 @@ fitted tables (`core/laws.inc`). Acceptance against the reference: `docs/accepta
 | `FilterCutoffLFOPhase` | 0-15 | built (the pitch LFO's block), not covered | as the pitch LFO's (speed checked at 100) | - |
 | `FilterCutoffLFODelayTime` | 0-127 | built (the pitch LFO's block), not covered | as the pitch LFO's (speed checked at 100) | - |
 | `FilterCutoffLFOFadeInTime` | 0-214 | built (the pitch LFO's block), not covered | as the pitch LFO's (speed checked at 100) | - |
-| `AmplitudeLevel` | 0-511 | 56-511 | fitted table (dB), 0.1 dB; one calibration constant (-15.96 dB) fitted on probe A's 2nd harmonic | mean power over 12 seeds vs 3 takes: +0.6 to +2.2 dB |
+| `AmplitudeLevel` | 0-511 | 56-511 | fitted table (dB), 0.1 dB; one calibration constant (-11.40 dB, round 5) fitted on one held saw at part volume 127 (va-round5 V1; the earlier -15.96 was fitted on probe A at part volume 100) | the saw at 511 within 0.003 dB (tests/core); probe A: `docs/acceptance.md` |
 | `AmplitudeLevelVelocitySensitivity` | 1-511 | 256 only | no effect measured at 256 (velocities 40/80/127 within 0.4 dB) | yes |
 | `AmplitudeLevelLFODepth` | 1-255 | yes (with the amplitude LFO's sine, phase 0, no delay or fade-in) | gain in dB = -A (1 - value), the top at the level (within 0.01 dB), a sine in dB (within 0.01 dB); A by steps from 128: 0.188 at 4, 1.13 at 16, 6.02 at 64, 12.04 at 96, 24.3 at 120, 48.2 at 127 (17 knots, linear between); the sign inverts; the amplitude LFO runs a quarter cycle ahead of the pitch LFO (reset on, sine: at its top on the note-on, 80-87 degrees) | 144 / 192 / 224 / 64: 1.13 / 6.02 / 12.05 / 6.02 dB against 1.13 / 6.02 / 12.04 / 6.02 |
 | `AmplitudeLevelKeyFollow` | 0-127 | no | - | - |

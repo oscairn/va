@@ -20,10 +20,10 @@ float at(const Law& l, float x) {
     return l.y[l.n - 1];
 }
 
-// Calibration: the output level of this core against the reference's, one constant (dB), fitted on
-// probe A's sustained second harmonic at three keys and velocities (docs/coverage.md).
-// Round 5: +0.65 dB, the pass-band gain of filter 2's HPF24 at cutoff 0 (probe A has it; the core applies it since round 5).
-constexpr double kCalibrationDb = -15.96 + 0.65;
+// Calibration: the output level of this core against the reference's at part volume 127 (the host applies the part's volume),
+// one constant (dB), fitted on one held saw (key 60, out level 511, filters thru, amplitude level 511; measurement run va-round5
+// V1, three takes within 0.01 dB). The earlier constant (-15.96) was fitted on recordings at part volume 100, 4.12 dB down.
+constexpr double kCalibrationDb = -11.40;
 
 // Release laws (measured on sine probes at release 160 with sustain 140-511, on probe A, and at
 // release 145 on 78 notes of 0.005-1 s at sustains 140-511, decays 120-180 and attack 80): the law is
