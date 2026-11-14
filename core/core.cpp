@@ -612,7 +612,8 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
             if (cut < 0) return;  // no room: the note does not sound (voice(v) is not sounding; the caller ends it)
             free_(si, p.voice[cut]);
         }
-        auto rnd = [this] { rng_ ^= rng_ << 13; rng_ ^= rng_ >> 17; rng_ ^= rng_ << 5; return float(rng_ >> 8) * (1.f / 16777216.f); };
+        uint32_t& rng = rng_[si];
+        auto rnd = [&rng] { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return float(rng >> 8) * (1.f / 16777216.f); };
         const int vi = int(vel * 127.f + 0.5f) < 0 ? 0 : int(vel * 127.f + 0.5f) > 127 ? 127 : int(vel * 127.f + 0.5f);
         for (uint32_t c = 0; c < s.unison; ++c) {  // each voice of the note: its own free-running phases, drift and LFO phases
             const uint32_t i = p.n++;
@@ -623,7 +624,7 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
             p.f[PH1][i] = rnd(); p.f[PH2][i] = rnd();  // free-running oscillators
             p.f[PW1][i] = s.pw[0]; p.f[PW2][i] = s.pw[1];
             // drift: the process runs on in the reference's voices between notes; a fresh voice starts anywhere in it
-            p.rng[i] = (rng_ ^= rng_ << 13, rng_ ^= rng_ >> 17, rng_ ^= rng_ << 5, rng_ | 1u);
+            p.rng[i] = (rng ^= rng << 13, rng ^= rng >> 17, rng ^= rng << 5, rng | 1u);
             p.f[DS1][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic; p.f[DS2][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic;
             p.f[DA1][i] = rnd() * 2 - 1; p.f[DB1][i] = rnd() * 2 - 1; p.f[DP1][i] = rnd();
             p.f[DA2][i] = rnd() * 2 - 1; p.f[DB2][i] = rnd() * 2 - 1; p.f[DP2][i] = rnd();
@@ -776,8 +777,14 @@ void Core::reap_(uint32_t si) {
 }
 
 void Core::render(float* L, float* R, uint32_t frames) {
+    float* l[kMaxSounds]; float* r[kMaxSounds];
+    for (uint32_t s = 0; s < kMaxSounds; ++s) l[s] = L, r[s] = R;
+    render(l, r, frames);
+}
+
+void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t only) {
     uint8_t busy[kMaxSounds]; uint32_t nb = 0;  // the sounds with voices: no voice starts or ends within a call
-    for (uint32_t si = 0; si < kMaxSounds; ++si) if (pool_[si].n) busy[nb++] = uint8_t(si);
+    for (uint32_t si = 0; si < kMaxSounds; ++si) if (pool_[si].n && (only >> si & 1)) busy[nb++] = uint8_t(si);
     if (!nb) return;
     FtzScope ftz;
     alignas(16) float bend[kMaxSounds][16];  // each sound's bend per channel: fixed for this call, so once per call
@@ -838,7 +845,8 @@ void Core::render(float* L, float* R, uint32_t frames) {
             vf accL[kSub], accR[kSub];
             for (int k = 0; k < n; ++k) accL[k] = accR[k] = splat(0.f);
             s.kernel->run(p, s, c, accL, accR, interleave_);
-            for (int k = 0; k < n; ++k) { L[done + k] += hsum(accL[k]); R[done + k] += hsum(accR[k]); }
+            float* const l = L[si] + done; float* const r = R[si] + done;
+            for (int k = 0; k < n; ++k) { l[k] += hsum(accL[k]); r[k] += hsum(accR[k]); }
             if (ending_[si]) reap_(si);  // only a sound with a voice releasing or fading can lose one
         }
         done += uint32_t(n);

@@ -20,6 +20,7 @@ namespace va {
 
 constexpr uint32_t kVoices = 64;   // the pool: the most voices the core can sound at once
 constexpr uint32_t kContexts = 8;  // sound contexts (slot 0 is the default sound)
+constexpr uint32_t kPorts = kContexts + 1;  // stereo output ports: main and a sound bus for each sound
 
 // The parameters, per sound. level: linear, 1 = the patch's own level; polyphony: the most voices
 // this sound may keep (1..kVoices).
@@ -27,12 +28,13 @@ constexpr uint32_t kContexts = 8;  // sound contexts (slot 0 is the default soun
 // follow at the next control step. A sound starts at its patch's own knob values. Ids are stable (docs/parameters.md).
 // ribbon, switch1, switch2: the part's ribbon and switches 1-2 as controller box sources (0..1 as a 7-bit controller's 0..127);
 // kFoot2, kFootSwitch (after the destinations, not saved: performance controllers, as the MIDI ones): foot controller 2 and the
-// foot switch, the same way (a host passes neither's MIDI controller).
+// foot switch, the same way (a host passes neither's MIDI controller). kBus (last): the output port the sound plays on (0 main,
+// n sound bus n), saved with the sound after its raw patch.
 // The parameters before kStateCount are the shell's values (saved in the state's value list). From kDest0 on: the controller
 // box destinations the core moves (vcore::Dest order), in the patch's raw units: a value event sets the destination, a
 // modulation adds raw steps to it with its boxes (docs/parameters.md); their values live in the raw patch.
 enum Param : uint32_t { kLevel, kPan, kPolyphony, kKnob1, kKnob8 = kKnob1 + 7, kRibbon, kSwitch1, kSwitch2, kStateCount,
-                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kPortaTime, kParamCount };
+                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kPortaTime, kBus, kParamCount };
 // A parameter's destination (vcore::Dest; -1: not a destination) and a destination's parameter: ids 14-37, then the oscillators' waves
 // (40-42) and the portamento time (43), added after the foot controls (ids are never renumbered).
 constexpr int destOf(uint32_t p) {
@@ -68,7 +70,8 @@ inline constexpr ParamInfo kParams[] = {
     {"Pitch LFO Speed", "", 0, 415, 208, false}, {"Osc 1 Frequency (cents)", "", -3600, 3600, 0, false},
     {"Osc 2 Frequency (cents)", "", -3600, 3600, 0, false}, {"Osc 3 Frequency (cents)", "", -3600, 3600, 0, false},
     {"Foot Controller 2", "foot2", 0, 1, 1, false}, {"Foot Switch", "footswitch", 0, 1, 0, true},
-    {"Osc 1 Wave", "", 0, 4, 0, true}, {"Osc 2 Wave", "", 0, 4, 0, true}, {"Osc 3 Wave", "", 0, 4, 0, true}, {"Portamento Time", "", 0, 127, 64, false}};
+    {"Osc 1 Wave", "", 0, 4, 0, true}, {"Osc 2 Wave", "", 0, 4, 0, true}, {"Osc 3 Wave", "", 0, 4, 0, true}, {"Portamento Time", "", 0, 127, 64, false},
+    {"Output Bus", "bus", 0, kContexts, 0, true}};
 static_assert(sizeof kParams / sizeof kParams[0] == kParamCount, "one entry a parameter");
 
 // A float that can be copied (a Patch is copied) and read by one thread while another writes it.
@@ -126,6 +129,9 @@ public:
     virtual void setController(int16_t channel, int source, double value) = 0;
     // Adds the sound of every voice of every context into left/right.
     virtual void render(float* left, float* right, uint32_t frames) = 0;
+    // The same for the contexts in `only` (bit c: context c), each into its own outputs: context c adds into left[c], right[c]
+    // (kContexts of each).
+    virtual void render(float* const* left, float* const* right, uint32_t frames, uint32_t only) = 0;
     virtual uint32_t voiceCount() const = 0;                        // voices sounding, fading ones included
     virtual VoiceInfo voice(uint32_t voice) const = 0;
     virtual SoundCost cost(uint32_t context) const = 0;              // any thread

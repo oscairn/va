@@ -6,7 +6,7 @@
 TEST(parameter_metadata) {
     Inst a(false);
     const uint32_t n = a.params->count(a.p);
-    CHECK_EQ(n, 44u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
+    CHECK_EQ(n, 45u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
                        // the oscillators' waves and the portamento time (destinations, 40-43; docs/parameters.md)
     std::vector<clap_id> seen;
     for (uint32_t i = 0; i < n; ++i) {
@@ -17,7 +17,7 @@ TEST(parameter_metadata) {
         CHECK(std::isfinite(info.min_value) && info.min_value <= info.default_value && info.default_value <= info.max_value);
         CHECK(info.name[0] != 0);
         // a destination shows the sound's own value (the test sound's amplitude release is 112), the others their default
-        const bool dest = (info.id >= 14 && info.id <= 37) || info.id >= 40;
+        const bool dest = (info.id >= 14 && info.id <= 37) || (info.id >= 40 && info.id <= 43);  // 44: the output bus
         if (!dest) CHECK(std::fabs(a.value(info.id) - info.default_value) < 1e-6);
         else CHECK(a.value(info.id) >= info.min_value && a.value(info.id) <= info.max_value);
         CHECK(((info.flags & CLAP_PARAM_IS_MODULATABLE) != 0) == dest);
@@ -50,7 +50,7 @@ TEST(state_round_trip_is_byte_identical) {
     Inst a;
     a.block(128, {param(0, 0, 0.3), param(0, 1, -0.5), param(0, 2, 10)});
     const std::string s = a.save();
-    CHECK(s.rfind("oscairn-va-state 4\n", 0) == 0);
+    CHECK(s.rfind("oscairn-va-state 5\n", 0) == 0);
     Inst b;
     CHECK(b.load(s));
     CHECK_EQ(b.save() == s, true);
@@ -91,7 +91,7 @@ TEST(sound_context_snapshot_round_trip) {
     a.block(128);
     Stream s;
     CHECK(a.contexts->state->save(a.p, &s.out));
-    CHECK(s.data.rfind("oscairn-va-contexts/4\n", 0) == 0);
+    CHECK(s.data.rfind("oscairn-va-contexts/5\n", 0) == 0);
     Inst c;
     Stream in; in.data = s.data;
     CHECK(c.contexts->state->load(c.p, &in.in));

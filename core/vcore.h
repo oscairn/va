@@ -123,6 +123,9 @@ public:
     // Adds every voice into left/right. Any frame count; a note starts on the frame its noteOn
     // falls between two render calls.
     void render(float* left, float* right, uint32_t frames);
+    // The same for the sounds in `only` (bit s: sound s), each into its own outputs: sound s adds into left[s], right[s]
+    // (kMaxSounds of each). A sound's control steps fall every kSub frames from the start of each call that renders it.
+    void render(float* const* left, float* const* right, uint32_t frames, uint32_t only = ~0u);
 
     uint32_t voiceCount() const;
     VoiceState voice(uint32_t v) const;
@@ -130,7 +133,7 @@ public:
     // Test hook: render with 1 or 2 lanes interleaved in the filter loops (2 is the default).
     void setInterleave(int lanes) { interleave_ = lanes == 1 ? 1 : 2; }
     // The random source of free-running phases and drift (tests and measurements; never 0).
-    void seed(uint32_t s) { rng_ = s ? s : 1; }
+    void seed(uint32_t s) { for (auto& r : rng_) r = s ? s : 1; }
 
 private:
     // parked: a held key whose voice another note took over (a mono sound's, or single key assignment's); owner: that note's slot
@@ -144,7 +147,9 @@ private:
     void reap_(uint32_t sound);
     double sr_ = 48000;
     int interleave_ = 2;
-    uint32_t rng_ = 0x9e3779b9u;
+    // each sound's own, so that its notes draw the same whatever other sounds play beside it (parts sharing an instance)
+    uint32_t rng_[kMaxSounds] = {0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u};
+    static_assert(kMaxSounds == 8, "a seed for each sound above");
     float bend_[16] = {};
     float knob_[kMaxSounds][8] = {};
     float panel_[kMaxSounds][5] = {};       // ribbon, switch 1, switch 2, foot controller 2, foot switch: 0..1024

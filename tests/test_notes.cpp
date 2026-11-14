@@ -19,9 +19,11 @@ TEST(descriptor_and_ports) {
     Inst a(false);
     auto* ap = static_cast<const clap_plugin_audio_ports_t*>(a.p->get_extension(a.p, CLAP_EXT_AUDIO_PORTS));
     auto* np = static_cast<const clap_plugin_note_ports_t*>(a.p->get_extension(a.p, CLAP_EXT_NOTE_PORTS));
-    CHECK(ap && ap->count(a.p, false) == 1 && ap->count(a.p, true) == 0);
-    clap_audio_port_info_t ai{};
-    CHECK(ap && ap->get(a.p, 0, false, &ai) && ai.channel_count == 2);
+    CHECK(ap && ap->count(a.p, false) == 9 && ap->count(a.p, true) == 0);
+    for (uint32_t k = 0; k < 9; ++k) {  // main, sound buses 1-8: stable ids 0-8
+        clap_audio_port_info_t ai{};
+        CHECK(ap && ap->get(a.p, k, false, &ai) && ai.channel_count == 2 && ai.id == k && bool(ai.flags & CLAP_AUDIO_PORT_IS_MAIN) == (k == 0));
+    }
     clap_note_port_info_t ni{};
     CHECK(np && np->count(a.p, true) == 1 && np->get(a.p, 0, true, &ni));
     CHECK((ni.supported_dialects & CLAP_NOTE_DIALECT_CLAP) && (ni.supported_dialects & CLAP_NOTE_DIALECT_MIDI));
@@ -178,6 +180,9 @@ static void randomRun(unsigned seed, const char* instanceCap, int blocks) {
     // notes share voices: every note still ends once)
     uint32_t ids[3] = {0, CLAP_INVALID_ID, CLAP_INVALID_ID};
     char msg[128];
+    a.outputs = 9;
+    a.ring = seed % 2;  // a ring-out buffer, with choke_retiring now and then
+    std::vector<uint32_t> made;  // sounds that come on a random bus and channel, and go once idle
     ids[1] = a.contexts->prepare(a.p, "b", nullptr, 0, "level=0.4 pan=-0.5 PartKeyAssignMode=0", nullptr, msg, sizeof msg);
     ids[2] = a.contexts->prepare(a.p, "c", nullptr, 0, "level=0.6 pan=0.5 polyphony=3 PartMonoPolyMode=0 PortamentoMaster=1 PartPortamentoTime=40", nullptr, msg, sizeof msg);
     CHECK(ids[1] != CLAP_INVALID_ID && ids[2] != CLAP_INVALID_ID);
@@ -226,6 +231,14 @@ static void randomRun(unsigned seed, const char* instanceCap, int blocks) {
         if (b % 211 == 50) { sounding(owedIds, owedMidi); Stream s; s.data = snap.data; a.contexts->state->load(a.p, &s.in); }
         if (b % 173 == 7) { Stream s; s.data = st.data; a.state->load(a.p, &s.in); }
         if (b % 37 == 3) a.contexts->select(a.p, ids[pick(3)] == 0 ? 0 : ids[pick(3)], int16_t(pick(4) == 3 ? -1 : pick(3)));
+        if (b % 41 == 9) {
+            if (a.ring && pick(2)) a.snapshots->choke_retiring(a.p);
+            const std::string text = "level=0.5 bus=" + std::to_string(pick(9)) + " " + kShortRelease + " Filter1FilterCutoff=" + std::to_string(200 + pick(800));
+            const uint32_t id = a.contexts->prepare(a.p, "d", nullptr, 0, text.c_str(), nullptr, msg, sizeof msg);
+            if (id != CLAP_INVALID_ID) { made.push_back(id); a.contexts->select(a.p, id, int16_t(pick(3))); }
+        }
+        if (b % 43 == 11)
+            for (size_t i = 0; i < made.size();) { if (a.contexts->discard(a.p, made[i])) made.erase(made.begin() + long(i)); else ++i; }
         if (b % 61 == 5) {
             const uint32_t lim = pick(3) ? uint32_t(pick(12)) : 0;
             oscairn_voice_budget_context_t c{ids[1], uint32_t(pick(4)), uint32_t(pick(3)), uint8_t(pick(11)), 0};

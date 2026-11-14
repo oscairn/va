@@ -77,6 +77,7 @@ public:
         if (source < 0) core_.resetControllers(ch); else core_.setController(ch, source, float(x));
     }
     void render(float* l, float* r, uint32_t n) override { sync(); core_.render(l, r, n); }
+    void render(float* const* l, float* const* r, uint32_t n, uint32_t only) override { sync(); core_.render(l, r, n, only); }
     uint32_t voiceCount() const override { return core_.voiceCount(); }
     VoiceInfo voice(uint32_t v) const override {
         const auto s = core_.voice(v);

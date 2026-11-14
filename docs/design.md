@@ -34,9 +34,9 @@ description could drive another executor (a DSP or FPGA pipeline): the per-voice
 
 ## Voices and lanes
 
-Each sound has its own pool of voices, `W` per SIMD lane (4 with NEON or SSE2, 1 scalar). Control
-steps run every 16 frames at most (fewer when the host splits a block at an event, so a note starts
-on its exact frame), with linear ramps of every coefficient and gain between steps. The filters are the
+Each sound has its own pool of voices, `W` per SIMD lane (4 with NEON or SSE2, 1 scalar), its own outputs and its own
+random source. Control steps run every 16 frames at most from the start of each render call (fewer when the host splits a
+block at an event, so a note starts on its exact frame; the shell splits a sound only at the events of its own channels), with linear ramps of every coefficient and gain between steps. The filters are the
 reference's own structure, found by measurement (round 5, `docs/coverage.md`): a state-variable section with a
 unit delay in its loop (lp += F bp; hp = x - lp - q bp; bp += F hp) and a one-pole, cascaded per type; each
 filter ramps F, q and the second section's F and q (or the one-pole's c), and its output gain (the resonance's

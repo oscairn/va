@@ -7,6 +7,7 @@
 #include <oscairn-clap/memory.h>
 #include <oscairn-clap/sound-contexts-plugin.hpp>
 #include <oscairn-clap/ui.h>
+#include <clap/ext/audio-ports-activation.h>
 
 #include <algorithm>
 #include <cmath>
@@ -22,8 +23,9 @@
 namespace va {
 namespace {
 
-constexpr const char* kStateHeader = "oscairn-va-state 4";      // the CLAP state: the default sound
-constexpr const char* kSnapshotHeader = "oscairn-va-contexts/4"; // the sound-contexts snapshot (one token)
+constexpr const char* kStateHeader = "oscairn-va-state 5";      // the CLAP state: the default sound (state 4, before the
+constexpr const char* kStateHeader4 = "oscairn-va-state 4";     // output bus, still reads)
+constexpr const char* kSnapshotHeader = "oscairn-va-contexts/5"; // the sound-contexts snapshot (one token)
 constexpr size_t kMaxStateBytes = 1 << 18;  // eight sounds of every raw parameter, as text
 constexpr uint32_t kMaxDeviceVoices = 128, kMaxDeviceVoicesPerSound = 64;
 
@@ -74,6 +76,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     uint32_t owedCount = 0;
     uint32_t shownSlot = 0;               // the sound whose values `values` holds
     uint64_t live = 0;                    // audio thread: the active voices (start sets, voiceFinished clears); per-block loops visit only these
+    std::array<std::atomic<bool>, kPorts> portActive{};  // output ports 1-8 as the host set them (not saved); 0 is always used
     double sampleRate = 48000;
     uint32_t maxBlock = 0;
 
@@ -105,13 +108,13 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     uint32_t index(const Voice& v) const { return uint32_t(&v - voices.data()); }
     void start(Voice& v, Context& c) {
         const uint32_t i = index(v);
-        live |= uint64_t(1) << i;
+        live |= uint64_t(1) << i; liveIn[uint32_t(&c - contexts.data())] |= uint64_t(1) << i;
         makeRoom(c, i);
         core->noteOn(i, uint32_t(&c - contexts.data()), v.channel, v.key, v.velocity);
     }
     void release(Voice& v) { core->noteOff(index(v)); }
     // Every way a note's voice ends (released out, choked, stolen, reset): free the core's slot.
-    void voiceFinished(Voice& v) { core->kill(index(v)); choking[index(v)] = false; live &= ~(uint64_t(1) << index(v)); }
+    void voiceFinished(Voice& v) { core->kill(index(v)); choking[index(v)] = false; live &= ~(uint64_t(1) << index(v)); liveIn[v.context] &= ~(uint64_t(1) << index(v)); }
     double loudness(const Voice& v) const { return core->voice(index(v)).level; }
     void applyExpression(const clap_event_note_expression_t& e) {
         Base::applyExpression(e);
@@ -271,34 +274,94 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     }
 
     // ---- rendering ----------------------------------------------------------------------
-    void render(const clap_process_t* pr, uint32_t from, uint32_t to) {
-        for (uint64_t m = live; m; m &= m - 1)  // a choke (NOTE_CHOKE or the helper's own) fades in the core too
-            if (const uint32_t i = lowBit(m); voices[i].active && voices[i].chokeLength && !choking[i]) {
+    // Each context renders on its own, up to an event only when the event concerns it (its channel's, or every
+    // channel's), so that one part's events never split another's control steps: a sound sharing the instance plays as
+    // it would alone in an instance of its own. Its outputs (its bus, or the ring-out buffer) are set at the block's start.
+    std::array<float*, kContexts> busL{}, busR{};  // audio thread, this block: each context's outputs
+    std::array<uint64_t, kContexts> liveIn{};      // audio thread: each context's active voices (as `live`)
+    void outputs(const clap_process_t* pr) {
+        const uint32_t frames = pr->frames_count;
+        float* left[kPorts]; float* right[kPorts];
+        for (uint32_t k = 0; k < kPorts; ++k) {  // ports 1-8 where the host gives and activated them, else main
+            float* const* o = k < pr->audio_outputs_count ? pr->audio_outputs[k].data32 : nullptr;
+            const bool own = o && o[0] && o[1] && pr->audio_outputs[k].channel_count >= 2 && (k == 0 || portActive[k].load(std::memory_order_relaxed));
+            left[k] = own ? o[0] : left[0]; right[k] = own ? o[1] : right[0];
+            if (own) { std::memset(o[0], 0, frames * sizeof(float)); std::memset(o[1], 0, frames * sizeof(float)); }
+        }
+        for (uint32_t slot = 0; slot < kContexts; ++slot) {  // a retiring sound's main output rings out (oscairn.sound-snapshots)
+            const uint32_t bus = uint32_t(clampParam(kBus, contexts[slot].patch.p[kBus].get()));
+            const auto* ring = bus ? nullptr : retiring(slot);
+            busL[slot] = ring ? ring[0] : left[bus]; busR[slot] = ring ? ring[1] : right[bus];
+        }
+    }
+    // The contexts an event acts on: those its channel selects or has voices of, or all.
+    uint32_t concerned(const clap_event_header_t* h) const {
+        constexpr uint32_t all = (1u << kContexts) - 1;
+        int ch = -1;
+        switch (h->type) {
+        case CLAP_EVENT_PARAM_VALUE: ch = reinterpret_cast<const clap_event_param_value_t*>(h)->channel; break;
+        case CLAP_EVENT_PARAM_MOD: ch = reinterpret_cast<const clap_event_param_mod_t*>(h)->channel; break;
+        case CLAP_EVENT_NOTE_ON: case CLAP_EVENT_NOTE_OFF: case CLAP_EVENT_NOTE_CHOKE: ch = reinterpret_cast<const clap_event_note_t*>(h)->channel; break;
+        case CLAP_EVENT_NOTE_EXPRESSION: ch = reinterpret_cast<const clap_event_note_expression_t*>(h)->channel; break;
+        case CLAP_EVENT_MIDI: ch = reinterpret_cast<const clap_event_midi_t*>(h)->data[0] & 15; break;
+        default: return 0;
+        }
+        if (ch < 0 || ch > 15) return all;
+        uint32_t m = 1u << selected[size_t(ch)];
+        for (uint64_t v = live; v; v &= v - 1) if (voices[lowBit(v)].channel == ch) m |= 1u << voices[lowBit(v)].context;
+        return m;
+    }
+    // Context c from frame `from` to `to`: its voices' chokes begin in the core, it renders, and its notes the core
+    // finished or whose choke faded out end.
+    void renderContext(uint32_t c, uint32_t from, uint32_t to) {
+        const uint64_t mine = liveIn[c];
+        if (to <= from || !mine) return;
+        for (uint64_t m = mine; m; m &= m - 1)
+            if (const uint32_t i = lowBit(m); voices[i].chokeLength && !choking[i]) {
                 core->choke(i, std::max<uint32_t>(1, voices[i].chokeLeft));
                 choking[i] = true;
             }
-        float* const* out = pr->audio_outputs[0].data32;
-        if (!out || !out[0] || !out[1]) return;
-        std::memset(out[0] + from, 0, (to - from) * sizeof(float));
-        std::memset(out[1] + from, 0, (to - from) * sizeof(float));
-        core->render(out[0] + from, out[1] + from, to - from);
-        for (uint64_t m = live; m; m &= m - 1)  // a voice the core finished: its note ends here
-            if (const uint32_t i = lowBit(m); voices[i].active && !core->voice(i).sounding) {
-                const auto at = eventTime; eventTime = to ? to - 1 : 0;
-                finishVoice(voices[i]);
-                eventTime = at;
-            }
-    }
-    // The helper's renderSegment and notes, over the active voices only (the same work; theirs visit all 64 every block).
-    void renderSegment(const clap_process_t* pr, uint32_t from, uint32_t to) {
-        render(pr, from, to);
-        const uint32_t frames = to - from;
-        for (uint64_t m = live; m; m &= m - 1) {
+        float* l[kContexts]; float* r[kContexts];
+        for (uint32_t k = 0; k < kContexts; ++k) l[k] = busL[c] + from, r[k] = busR[c] + from;
+        core->render(l, r, to - from, 1u << c);
+        const auto at = eventTime; eventTime = to - 1;
+        for (uint64_t m = mine; m; m &= m - 1) {
             auto& v = voices[lowBit(m)];
-            if (!v.active || !v.chokeLength) continue;
-            v.chokeLeft = v.chokeLeft > frames ? v.chokeLeft - frames : 0;
-            if (!v.chokeLeft) { const auto at = eventTime; eventTime = to ? to - 1 : 0; finishVoice(v); eventTime = at; }
+            if (!v.active) continue;
+            if (!core->voice(lowBit(m)).sounding) { finishVoice(v); continue; }
+            if (!v.chokeLength) continue;
+            v.chokeLeft = v.chokeLeft > to - from ? v.chokeLeft - (to - from) : 0;
+            if (!v.chokeLeft) finishVoice(v);
         }
+        eventTime = at;
+    }
+    static clap_process_status process(const clap_plugin_t* p, const clap_process_t* pr) {
+        auto& s = self(p);
+        if (pr->audio_outputs_count < 1 || pr->audio_outputs[0].channel_count < 2 || !pr->audio_outputs[0].data32 ||
+            !pr->audio_outputs[0].data32[0] || !pr->audio_outputs[0].data32[1])
+            return CLAP_PROCESS_ERROR;
+        s.output = pr->out_events; s.eventTime = 0;
+        struct ClearOutput { Plugin& s; ~ClearOutput() { s.output = nullptr; s.ringOut = nullptr; } } clearOutput{s};
+        s.applySelections(pr->out_events);
+        s.keepWithinLimits();
+        s.outputs(pr);
+        const uint32_t frames = pr->frames_count, count = pr->in_events->size(pr->in_events);
+        std::array<uint32_t, kContexts> done{};
+        for (uint32_t e = 0; e < count; ++e) {
+            const auto* h = pr->in_events->get(pr->in_events, e);
+            if (h->space_id != CLAP_CORE_EVENT_SPACE_ID) continue;
+            const uint32_t at = h->time < frames ? h->time : frames;
+            for (uint32_t m = s.concerned(h); m; m &= m - 1) { const uint32_t c = lowBit(m); s.renderContext(c, done[c], at); done[c] = std::max(done[c], at); }
+            s.eventTime = at;
+            if (h->type == CLAP_EVENT_PARAM_VALUE || h->type == CLAP_EVENT_PARAM_MOD) s.applyParam(h);
+            else if (h->type == CLAP_EVENT_NOTE_ON || h->type == CLAP_EVENT_NOTE_OFF || h->type == CLAP_EVENT_NOTE_CHOKE) {
+                const auto* note = reinterpret_cast<const clap_event_note_t*>(h);
+                if (h->type == CLAP_EVENT_NOTE_ON) s.noteOn(*note); else s.noteOff(*note, h->type == CLAP_EVENT_NOTE_CHOKE);
+            } else if (h->type == CLAP_EVENT_MIDI) s.applyMidi(*reinterpret_cast<const clap_event_midi_t*>(h));
+            else if (h->type == CLAP_EVENT_NOTE_EXPRESSION) s.applyExpression(*reinterpret_cast<const clap_event_note_expression_t*>(h));
+        }
+        for (uint32_t c = 0; c < kContexts; ++c) s.renderContext(c, done[c], frames);
+        return CLAP_PROCESS_CONTINUE;
     }
     static uint32_t voiceNotes(const clap_plugin_t* p, oscairn_voice_budget_note_t* notes, uint32_t capacity) {
         auto& s = self(p); oscairn::voices::Report<kVoices> report;
@@ -350,6 +413,13 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         }
     }
 
+    // oscairn.sound-snapshots draft 4: a sound saved on its own plays on the main port; its values, every writable one
+    void alone(Patch& p) { p.p[kBus].set(0); }
+    uint32_t patchValues(const Patch& p, oscairn_sound_parameter_t* out, uint32_t capacity) {
+        for (uint32_t i = 0; i < kParamCount && i < capacity; ++i) out[i] = {i, p.p[i].get()};
+        return kParamCount;
+    }
+
     // ---- patches and state --------------------------------------------------------------
     // The raw patch's knob values and destinations follow the shell's parameters (main thread: the patch is not shared yet).
     static void syncKnobs(Patch& p) {
@@ -358,22 +428,24 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     }
     // The destination parameters from the raw patch (they are its values).
     static void destsFromRaw(Patch& p) { for (int d = 0; d < vcore::kDests; ++d) p.p[paramOf(d)].set(hasRaw(d) ? float(p.raw[kDestRaw[d]]) : 0.f); }
-    // The shell's values, then the sound's raw parameters as one quoted vcore-patch text.
+    // The shell's values, then the sound's raw parameters as one quoted vcore-patch text, then its output bus.
     bool writePatch(std::ostream& out, const Patch& p) {
         for (uint32_t i = 0; i < kStateCount; ++i) out << ' ' << p.p[i].get();
         Patch q = p; syncKnobs(q);  // the knobs as they are now (set live, the raw text still holds where they started)
         std::string text(vcore::writePatch(q.raw, nullptr, 0) + 1, '\0');
         text.resize(vcore::writePatch(q.raw, &text[0], text.size()));
-        out << ' ' << std::quoted(text);
+        out << ' ' << std::quoted(text) << ' ' << p.p[kBus].get();
         return bool(out);
     }
-    bool readPatch(std::istream& in, Patch& p) {
-        double x[kStateCount];
+    bool readPatch(std::istream& in, Patch& p, bool bus = true) {  // bus: a state 4 holds none
+        double x[kStateCount], b = 0;
         for (uint32_t i = 0; i < kStateCount; ++i) if (!(in >> x[i]) || !validValue(Param(i), x[i])) return false;
         std::string text;
         vcore::Patch raw;
         if (!(in >> std::quoted(text)) || !vcore::readPatch(text.c_str(), raw, nullptr, 0)) return false;
+        if (bus && (!(in >> b) || !validValue(kBus, b))) return false;
         for (uint32_t i = 0; i < kStateCount; ++i) p.p[i].set(clampParam(Param(i), x[i]));
+        p.p[kBus].set(clampParam(kBus, b));
         p.raw = raw;
         destsFromRaw(p);
         syncKnobs(p);
@@ -411,9 +483,9 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         }
         std::istringstream in(data); in.imbue(std::locale::classic());
         std::string line;
-        if (!std::getline(in, line) || line != kStateHeader) return false;
+        if (!std::getline(in, line) || (line != kStateHeader && line != kStateHeader4)) return false;
         Patch patch;
-        if (!s.readPatch(in, patch)) return false;
+        if (!s.readPatch(in, patch, line == kStateHeader)) return false;
         in >> std::ws;
         if (!in.eof()) return false;
         for (uint32_t i = 0; i < kParamCount; ++i) {
@@ -422,6 +494,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         }
         s.contexts[0].patch.raw = patch.raw;
         s.core->loadPatch(0, patch);
+        select(p, 0, -1);  // the state's sound plays on every channel (from the next block)
         return true;
     }
 
@@ -437,7 +510,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             const auto eq = tok.find('=');
             const auto key = tok.substr(0, eq);
             uint32_t id = kParamCount;
-            for (uint32_t i = 0; i < kStateCount; ++i) if (key == kParams[i].key) id = i;
+            for (uint32_t i = 0; i < kParamCount; ++i) if ((i < kStateCount || i == kBus) && key == kParams[i].key) id = i;
             if (tok == "vcore-patch/1") continue;
             if (id == kParamCount && eq != std::string::npos && vcore::findParam(key.c_str(), key.size()) >= 0) { raw += ' ' + tok; continue; }
             if (id == kParamCount || eq == std::string::npos) { error = "line 1: unknown or malformed '" + tok + "'"; return false; }
@@ -489,7 +562,6 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     static void stopProcessing(const clap_plugin_t*) {}
     static void reset(const clap_plugin_t* p) { self(p).silence(); }
     static void onMainThread(const clap_plugin_t*) {}  // nothing is deferred to it; a host may still call it
-    static clap_process_status process(const clap_plugin_t* p, const clap_process_t* pr) { return Base::process(p, pr); }
 
     static uint32_t paramCount(const clap_plugin_t*) { return kParamCount; }
     static bool paramInfo(const clap_plugin_t*, uint32_t i, clap_param_info_t* info) {
@@ -545,6 +617,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         case kDest0 + vcore::DAmpDecay: h->role = OSCAIRN_ROLE_DECAY; h->view = 1; h->field = OSCAIRN_FIELD_DECAY; h->group = 4; break;
         case kDest0 + vcore::DAmpRelease: h->role = OSCAIRN_ROLE_RELEASE; h->view = 1; h->field = OSCAIRN_FIELD_RELEASE; h->group = 4; break;
         case kDest0 + vcore::DCutoff2: case kDest0 + vcore::DFegDepth2: case kDest0 + vcore::DReso2: h->group = 5; break;  // filter 2 (no role of its own)
+        case kBus: h->role = OSCAIRN_ROLE_OUTPUT_BUS; break;
         default: if (id >= kKnob1 && id <= kKnob8) h->group = 1; break;
         }
         return true;
@@ -560,13 +633,24 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     static const void* getExtension(const clap_plugin_t*, const char* id);
 };
 
+// Nine stereo outputs with stable ids: 0 main, n sound bus n (a sound with its output bus at n plays there).
 const clap_plugin_audio_ports_t kAudioPorts = {
-    [](const clap_plugin_t*, bool isInput) -> uint32_t { return isInput ? 0 : 1; },
+    [](const clap_plugin_t*, bool isInput) -> uint32_t { return isInput ? 0 : kPorts; },
     [](const clap_plugin_t*, uint32_t i, bool isInput, clap_audio_port_info_t* info) {
-        if (isInput || i) return false;
+        if (isInput || i >= kPorts) return false;
         *info = {};
-        info->id = 0; std::snprintf(info->name, sizeof info->name, "Main");
-        info->flags = CLAP_AUDIO_PORT_IS_MAIN; info->channel_count = 2; info->port_type = CLAP_PORT_STEREO; info->in_place_pair = CLAP_INVALID_ID;
+        info->id = i;
+        if (i) std::snprintf(info->name, sizeof info->name, "Bus %u", i); else std::snprintf(info->name, sizeof info->name, "Main");
+        info->flags = i ? 0 : CLAP_AUDIO_PORT_IS_MAIN; info->channel_count = 2; info->port_type = CLAP_PORT_STEREO; info->in_place_pair = CLAP_INVALID_ID;
+        return true;
+    }};
+// A port takes its sound only once the host has activated it (clap.audio-ports-activation); until then, or when it is
+// deactivated, it plays on the main port, and the port costs nothing.
+const clap_plugin_audio_ports_activation_t kPortsActivation = {
+    [](const clap_plugin_t*) { return true; },
+    [](const clap_plugin_t* p, bool isInput, uint32_t i, bool on, uint32_t) {
+        if (isInput || i >= kPorts) return false;
+        if (i) Plugin::self(p).portActive[i].store(on, std::memory_order_relaxed);
         return true;
     }};
 const clap_plugin_note_ports_t kNotePorts = {
@@ -582,16 +666,19 @@ const clap_plugin_params_t kParamsExt = {Plugin::paramCount, Plugin::paramInfo, 
 const clap_plugin_state_t kState = {Plugin::saveState, Plugin::loadState};
 const clap_plugin_state_t kSnapshot = {Plugin::saveSnapshot, Plugin::loadSnapshot};
 const oscairn_plugin_sound_contexts_t kSoundContexts = {Plugin::capacity, Plugin::get, Plugin::prepare, Plugin::select, Plugin::discard, &kSnapshot, nullptr};
+const oscairn_plugin_sound_snapshots_t kSoundSnapshots = {Plugin::prepareSnapshot, Plugin::setRingOut, Plugin::chokeRetiring, Plugin::saveSound, Plugin::soundValues};
 const oscairn_plugin_voice_budget_t kVoiceBudget = {Plugin::honorsVolume, Plugin::setLimits, Plugin::activeVoices, Plugin::voiceNotes};
 const oscairn_plugin_memory_t kMemory = {Plugin::memoryEstimate, Plugin::memoryCurrent};
 const oscairn_plugin_ui_t kUi = {Plugin::paramHint, nullptr, nullptr};
 
 const void* Plugin::getExtension(const clap_plugin_t*, const char* id) {
     if (!std::strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &kAudioPorts;
+    if (!std::strcmp(id, CLAP_EXT_AUDIO_PORTS_ACTIVATION) || !std::strcmp(id, CLAP_EXT_AUDIO_PORTS_ACTIVATION_COMPAT)) return &kPortsActivation;
     if (!std::strcmp(id, CLAP_EXT_NOTE_PORTS)) return &kNotePorts;
     if (!std::strcmp(id, CLAP_EXT_PARAMS)) return &kParamsExt;
     if (!std::strcmp(id, CLAP_EXT_STATE)) return &kState;
     if (!std::strcmp(id, OSCAIRN_EXT_SOUND_CONTEXTS)) return &kSoundContexts;
+    if (!std::strcmp(id, OSCAIRN_EXT_SOUND_SNAPSHOTS)) return &kSoundSnapshots;
     if (!std::strcmp(id, OSCAIRN_EXT_VOICE_BUDGET)) return &kVoiceBudget;
     if (!std::strcmp(id, OSCAIRN_EXT_MEMORY)) return &kMemory;
     if (!std::strcmp(id, OSCAIRN_EXT_UI) || !std::strcmp(id, OSCAIRN_EXT_UI_DRAFT_4)) return &kUi;

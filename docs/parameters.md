@@ -16,6 +16,7 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 | 39 | Foot Switch | `footswitch` | 0 or 1, stepped | 0 | the foot switch as a box source (5): 0 or 1024; not saved |
 | 40-42 | Osc 1-3 Wave | none (the raw patch's own parameters) | 0..4, stepped | the model's default; shows the sound's own value | controller box destinations, as ids 14-37 (below); modulatable |
 | 43 | Portamento Time | none (the raw patch's own parameter) | 0..127 | as ids 14-37 | a controller box destination (below); modulatable |
+| 44 | Output Bus | `bus` | 0..8, stepped | 0 | the output port the sound plays on: 0 main, n sound bus n (see [Output ports](#output-ports)); the output bus role |
 
 The knobs, the ribbon and the switches are what the reference's controller boxes read (box sources 8-15 = knobs 1-8). A change takes
 effect at the next control step of the core (at most 16 frames). Whatever the boxes add, the cutoff stops at the
@@ -23,8 +24,9 @@ filter's top (22.05 kHz) and the filter EG's depth at its range (raw 64-448: a b
 448 in the reference). Nothing is recompiled and nothing is allocated on the audio thread: the boxes are compiled
 with the sound, the knob value is applied in the control step. A sound starts at its patch's own knob
 values (`prepare` text or the raw patch); the CLAP state and the sound-contexts snapshot save the knob
-parameters, the ribbon and the switches with the other values (`oscairn-va-state 4`, `oscairn-va-contexts/4`: the shell's
-values are ids 0-13; the formats before them are not read). A host never passes the ribbon's or the switches' MIDI controllers
+parameters, the ribbon and the switches with the other values (`oscairn-va-state 5`, `oscairn-va-contexts/5`: the shell's
+values are ids 0-13, then the raw patch, then the Output Bus; a state 4 still loads, on Main; the formats before them are
+not read). A host never passes the ribbon's or the switches' MIDI controllers
 (CC 16, 86, 87) to a plugin, so they are parameters, as the knobs.
 
 ## Controller box destinations (ids 14-37, 40-43)
@@ -64,12 +66,29 @@ not express: the reference's curve shapes, several boxes summed and clamped, the
 (`vcore::notCovered`) judges the patch with its boxes; a value or modulation set from outside can take a destination beyond
 what was measured, as a knob can.
 
+## Output ports
+
+Nine stereo output ports with stable ids: 0 Main and 1-8 sound bus 1-8 (port n has id n). A sound whose Output Bus is n plays
+all of its voices on port n, from the next block after a change. With `clap.audio-ports-activation` a port plays only once
+the host has activated it: a port never activated costs nothing and its sound plays on Main.
+
+Parts sharing one instance (`oscairn.sound-snapshots/draft-4`): each part's sound has its own channel and Output Bus, and
+each sound renders on its own, split only at the events of its own channel (or of every channel), so another part's
+events never move its control steps: it plays sample for sample as it would alone in an instance of its own. `save_sound`
+writes one sound alone, as the Default of a whole snapshot, on every channel and on Main (Output Bus 0); `sound_values`
+gives ids 0-44 of a sound no channel selects. A loaded state or snapshot selects its sound on every channel (a CLAP state:
+from the next block). While a sound retires (no channel selects it) and the host gives a ring-out buffer, what it plays on
+Main goes into the buffer's channels 0 and 1, or 2 and 3 once `choke_retiring` fades it out over the choke time; a retiring
+sound on another bus stays there. Each sound draws its own random phases and drift, so its notes start the same whatever
+plays beside it.
+
 ## Editor hints (`oscairn.ui`)
 
 Every parameter has a hint: Level (role level, priority 1), Pan (pan), Cutoff (cutoff, 2), Resonance (resonance, 3), Filter EG
 Depth (filter envelope, 4), the filter EG's and the amplitude EG's attack, decay and release (their roles, and an envelope view
 each: views 2 and 1, fields attack / decay / release), Osc 1 / 2 Level (levels 1 and 2); the knobs, and the ribbon with the
-switches, and filter 2's cutoff, EG depth and resonance (ids 28-30), are a group each (the switches as switches).
+switches, and filter 2's cutoff, EG depth and resonance (ids 28-30), are a group each (the switches as switches); Output Bus
+has the output bus role (`OSCAIRN_ROLE_OUTPUT_BUS`).
 
 ## MIDI controllers (controller box sources)
 

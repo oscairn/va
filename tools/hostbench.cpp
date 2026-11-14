@@ -3,11 +3,14 @@
 // loaded, 128-frame blocks at 48 kHz, after every block oscairn.voice-budget's active_voices and its notes), one callgrind dump
 // per measured block (tools/cost/cg.sh).
 //   hostbench PLUGIN.clap CASE WARM MEAS      CASE: rest | held N | pattern (as tools/vcbench.cpp's); with HOSTBENCH_WHOLE set,
-//                                             one dump for the whole measured window
+//                                             one dump for the whole measured window; with HOSTBENCH_SOUNDS=N, N sounds of probe A
+//                                             share the instance, sound k on channel k and output bus k (nine ports, activated),
+//                                             the notes taken in turn
 #include <clap/clap.h>
 #include <dlfcn.h>
 #include <oscairn-clap/sound-contexts.h>
 #include <oscairn-clap/voice-budget.h>
+#include <clap/ext/audio-ports-activation.h>
 #if __has_include(<valgrind/callgrind.h>)
 #include <valgrind/callgrind.h>
 #else
@@ -57,19 +60,30 @@ int main(int argc, char** argv) {
     auto* vb = static_cast<const oscairn_plugin_voice_budget_t*>(p->get_extension(p, OSCAIRN_EXT_VOICE_BUDGET));
     // the snapshot: probe A as the default sound, its knobs as the shell's values (level, pan, polyphony, knobs 1-8, ribbon, switches)
     const std::string text = kProbeA;
-    std::string snap = "oscairn-va-contexts/4\n1 \"Default\" 1 0 64";
+    std::string snap = "oscairn-va-contexts/5\n1 \"Default\" 1 0 64";
     for (int k = 1; k <= 8; ++k) {
         const std::string key = "PartAssignableKnob" + std::to_string(k) + "Value=";
         const size_t at = text.find(key);
         snap += ' ' + std::to_string((at == std::string::npos ? 512 : std::atoi(text.c_str() + at + key.size())) / 1023.0);
     }
-    snap += " 0 0 0 \"" + text + "\"\n";
+    snap += " 0 0 0 \"" + text + "\" 0\n";
     for (int i = 1; i < 8; ++i) snap += "0\n";
     for (int ch = 0; ch < 16; ++ch) snap += "0 ";
     snap += '\n';
     Reader r; r.d = snap;
     if (!sc->state->load(p, &r.in)) { std::fprintf(stderr, "snapshot not loaded\n"); return 1; }
     p->activate(p, 48000, 1, 128); p->start_processing(p);
+    const char* shared = std::getenv("HOSTBENCH_SOUNDS");
+    const int sounds = shared ? std::max(1, std::min(8, std::atoi(shared))) : 1;
+    for (int k = 1; k < sounds; ++k) {
+        const oscairn_sound_parameter_t bus{44, double(k)};  // the output bus parameter
+        const uint32_t id = sc->prepare(p, "part", &bus, 1, text.c_str(), nullptr, nullptr, 0);
+        if (id == CLAP_INVALID_ID || !sc->select(p, id, int16_t(k))) { std::fprintf(stderr, "sound %d not prepared\n", k); return 1; }
+    }
+    if (sounds > 1) {
+        auto* act = static_cast<const clap_plugin_audio_ports_activation_t*>(p->get_extension(p, CLAP_EXT_AUDIO_PORTS_ACTIVATION));
+        for (uint32_t k = 1; k < 9; ++k) act->set_active(p, false, k, true, 32);
+    }
 
     const int B = 128;
     const long first = long(std::atof(argv[a0]) * 48000 / B), total = first + long(std::atof(argv[a0 + 1]) * 48000 / B);
@@ -85,7 +99,9 @@ int main(int argc, char** argv) {
         std::stable_sort(evs.begin(), evs.end(), [](const Ev& a, const Ev& b) { return a.frame < b.frame; });
     } else for (int k = 0; k < n; ++k) evs.push_back({0, true, 84 + k % 13});
     float l[B], rr[B]; float* ch[2] = {l, rr};
-    clap_audio_buffer_t out{}; out.data32 = ch; out.channel_count = 2;
+    static float ports[8][2][B]; float* pch[8][2];
+    clap_audio_buffer_t out[9]{}; out[0].data32 = ch; out[0].channel_count = 2;
+    for (int k = 0; k < 8; ++k) { pch[k][0] = ports[k][0]; pch[k][1] = ports[k][1]; out[k + 1].data32 = pch[k]; out[k + 1].channel_count = 2; }
     std::vector<oscairn_voice_budget_note_t> notes(256);
     Events in; in.ev.reserve(64);
     const bool whole = std::getenv("HOSTBENCH_WHOLE") != nullptr;
@@ -96,12 +112,13 @@ int main(int argc, char** argv) {
             const Ev& e = evs[ei++];
             clap_event_note_t x{};
             x.header = {sizeof x, uint32_t(e.frame - b * B), CLAP_CORE_EVENT_SPACE_ID, uint16_t(e.on ? CLAP_EVENT_NOTE_ON : CLAP_EVENT_NOTE_OFF), 0};
-            x.note_id = e.on ? ++id : -1; x.channel = 0; x.key = int16_t(e.key); x.velocity = e.on ? 0.8 : 0;
+            x.note_id = e.on ? ++id : -1; x.channel = int16_t((e.on ? id - 1 : 0) % sounds); x.key = int16_t(e.key); x.velocity = e.on ? 0.8 : 0;
+            if (!e.on) x.channel = -1;  // a key up on whichever channel holds it
             in.ev.push_back(x);
         }
         clap_process_t pr{};
         pr.steady_time = b * B; pr.frames_count = B; pr.in_events = &in.api; pr.out_events = &kOut;
-        pr.audio_outputs = &out; pr.audio_outputs_count = 1;
+        pr.audio_outputs = out; pr.audio_outputs_count = sounds > 1 ? 9 : 1;
         const bool m = b >= first;
         if (m && (!whole || b == first)) CALLGRIND_ZERO_STATS;
         p->process(p, &pr);
