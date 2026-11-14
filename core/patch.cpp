@@ -115,6 +115,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
     bool any[kDests] = {};
     for (int b = 0; b < 16; ++b) {
         if (!q[box(b, Box1ControllerSetSwitch)]) continue;
+        if (q[box(b, Box1ControllerSetRatio)] == 128) continue;  // ratio 0: its output, (c + o - 1024) x ratio / 8, is 0 whatever it drives
         const int src = q[box(b, Box1ControllerSetSource)], dest = q[box(b, Box1ControllerSetDestination)];
         Dest d[4]; int nd = 0;
         auto oscOn = [&](int n) { return q[osc(n, Osc1OscillatorOutLevel)] && q[Param(osc(n, Osc1OscillatorControllerSet1Switch) + b)]; };

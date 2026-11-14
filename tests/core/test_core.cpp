@@ -123,6 +123,8 @@ static void testCoverage() {
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetCurveType);
     p.set(Box3ControllerSetCurveType, 0); p.set(Box3ControllerSetDestination, 150);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetDestination);
+    p.set(Box3ControllerSetRatio, 128);  // ratio 0 drives nothing, whatever the destination
+    CHECK(notCovered(p, g, 64) == 0);
     CHECK(keySounds(probeA(), 84, 100) && keySounds(probeA(), 96, 1) && !keySounds(probeA(), 60, 100) && !keySounds(probeA(), 97, 100));
     const PlanDesc d = describe(probeA());
     CHECK(d.osc[0] == Wave::Saw && d.osc[1] == Wave::Saw && d.osc[2] == Wave::Off && d.filter[0] == 1 && d.filter[1] == 5 && d.count == 5);  // the square of width 0.5: a table
