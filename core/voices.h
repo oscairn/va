@@ -22,6 +22,10 @@ struct Env {
     float threshold;    // the level at note-off that separates the two release laws
 };
 
+// The LFOs run at control rate: at most 1/16 cycle a 16-frame step (172 Hz at 44.1 kHz, about speed 340; the reference's speeds
+// above 320 are audio rate, not covered). Faster, the per-step values alias and a resonant filter swept by them gains without bound
+// (the fuzz test: +17 dBFS from a filter LFO at speed 408 and depth 388 with resonance 209).
+constexpr float kLfoMaxRate = 1.f / 256;
 // One LFO's laws (pitch, filter cutoff or amplitude): per frame at the prepared rate.
 struct Lfo {
     float rate = 0;          // cycles per frame

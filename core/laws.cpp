@@ -116,7 +116,7 @@ constexpr float kLfoAmpY[] = {0, 0.188f, 0.378f, 0.753f, 1.13f, 1.693f, 2.45f, 3
 // rises as 1 - (1 - u)^2 over 2^((x - 154.5) / 15.7) s (96-214; 128-214 within 1 %).
 constexpr float kLfoPhaseDeg[] = {0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330};
 void lfoLaws(Lfo& o, int wave, int speed, int reset, int phase, int delay, int fade, double sr) {
-    o.rate = float(lfoHz(speed) / sr);
+    o.rate = float(std::min(lfoHz(speed) / sr, double(kLfoMaxRate)));
     o.wave = uint8_t(wave);
     o.reset = reset != 0;
     o.phase0 = kLfoPhaseDeg[phase & 15] / 360.f;
