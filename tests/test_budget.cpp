@@ -178,3 +178,41 @@ TEST(notes_and_active_voices_report) {
     a.run(24000);
     CHECK_EQ(a.voices(), 1u);
 }
+
+// An arpeggiator's stream: sixteenths at 84 BPM, each note-off on the same frame as the next note-on (off first, or on
+// first), the same key struck again in a row as well as other keys, at the block's first, middle and last frame, with the
+// device's cap of 6 voices a sound and without. Every note sounds at once and at full level, and ends exactly once.
+TEST(arpeggio_same_frame_off_on_never_loses_a_note) {
+    const int keys[] = {48, 52, 55, 52, 48, 48, 48, 55, 55, 52};
+    const uint32_t step = 8571;  // 48000 x 60 / 84 / 4
+    for (const char* cap : {(const char*)nullptr, "6"})
+        for (bool offFirst : {true, false})
+            for (uint32_t at : {0u, 64u, 127u}) {
+                Env env(nullptr, cap);
+                Inst a;
+                const int n = int(sizeof keys / sizeof keys[0]) * 3;
+                std::vector<float> level(size_t(n), 0.f);
+                for (int i = 0; i <= n; ++i) {
+                    std::vector<Bytes> ev;
+                    const int k = keys[i % 10], prev = keys[(i + 9) % 10];
+                    if (i > 0 && offFirst) ev.push_back(off(at, i - 1, 0, int16_t(prev)));
+                    if (i < n) ev.push_back(on(at, i, 0, int16_t(k)));
+                    if (i > 0 && !offFirst) ev.push_back(off(at, i - 1, 0, int16_t(prev)));
+                    const size_t from = a.L.size() + at;
+                    a.block(128, ev);
+                    for (uint32_t done = 128; done < step; done += 128) a.block(std::min<uint32_t>(128, step - done));
+                    if (i == n) break;
+                    oscairn_voice_budget_note_t r[64]{};
+                    const uint32_t m = a.budget->notes(a.p, r, 64);
+                    for (uint32_t j = 0; j < m; ++j) if (r[j].note_id == i) level[size_t(i)] = r[j].loudness;
+                    CHECK(peak(a.L, from, from + 960) > 0.05f);  // sounding within 20 ms
+                }
+                a.run(48000 * 3);
+                for (int i = 0; i < n; ++i) {
+                    if (level[size_t(i)] < 0.9f) std::printf("  cap %s, %s, frame %u: note %d at %.3f\n", cap ? cap : "none", offFirst ? "off first" : "on first", at, i, level[size_t(i)]);
+                    CHECK(level[size_t(i)] >= 0.9f);  // still at full level (the amplitude envelope, sustain 1) one step after its start
+                    CHECK_EQ(a.ends(i), 1);
+                }
+                CHECK(!a.badStatus && !a.badTime);
+            }
+}
