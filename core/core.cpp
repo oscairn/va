@@ -694,6 +694,9 @@ void Core::render(float* L, float* R, uint32_t frames) {
     for (auto& p : pool_) any |= p.n != 0;
     if (!any) return;
     FtzScope ftz;
+    alignas(16) float bend[kMaxSounds][16];  // each sound's bend per channel: fixed for this call, so once per call
+    for (uint32_t si = 0; si < kMaxSounds; ++si)
+        if (pool_[si].n) for (int ch = 0; ch < 16; ++ch) bend[si][ch] = bend_[ch] * (bend_[ch] >= 0 ? sound_[si].bendUp : -sound_[si].bendDown);
     for (uint32_t done = 0; done < frames;) {
         const int n = int(frames - done < uint32_t(kSub) ? frames - done : uint32_t(kSub));
         for (uint32_t si = 0; si < kMaxSounds; ++si) {
@@ -732,7 +735,7 @@ void Core::render(float* L, float* R, uint32_t frames) {
             }
             c.ka = stepCoef(la * fn); c.kd = stepCoef(ld * fn); c.kr = stepCoef(lr * fn); c.krl = stepCoef(lrl * fn);
             c.fa = stepCoef(fla * fn); c.fd = stepCoef(fld * fn); c.fr = stepCoef(flr * fn); c.frl = stepCoef(flrl * fn);
-            for (int ch = 0; ch < 16; ++ch) c.bend[ch] = bend_[ch] * (bend_[ch] >= 0 ? s.bendUp : -s.bendDown);
+            std::memcpy(c.bend, bend[si], sizeof c.bend);
             vf accL[kSub], accR[kSub];
             for (int k = 0; k < n; ++k) accL[k] = accR[k] = splat(0.f);
             s.kernel->run(p, s, c, accL, accR, interleave_);
