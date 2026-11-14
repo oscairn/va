@@ -37,6 +37,10 @@ run shed16 shed 16 0.5 0.02
 run hosted-rest rest 0.5 0.5
 run hosted-held8 held 8 0.5 0.5
 run hosted-pattern pattern 2 2
+# sounds sharing the instance (docs/cost.md): N sounds of probe A, sound k on channel k and bus k (nine ports activated, or the main
+# port only: -main), the notes taken in turn
+for k in 5 8; do (export HOSTBENCH_SOUNDS=$k; run hosted-rest-s$k rest 0.5 0.5; run hosted-held8-s$k held 8 0.5 0.5); done
+(export HOSTBENCH_SOUNDS=8 HOSTBENCH_PORTS=1; run hosted-rest-s8-main rest 0.5 0.5)
 if [ -d "$SRC/tools/cost/plans" ] && [ "$MODE" != check ]; then
   for p in "$SRC"/tools/cost/plans/*.patch; do VC_PATCH="$p" run "plan-$(basename "$p" .patch)" held 8 0.5 0.5; done
 fi
@@ -51,11 +55,12 @@ if [ "$MODE" = check ]; then
       echo "REGRESSION $name: $got instructions a block, baseline $base (+10 % allowed)"; fail=1
     else echo "ok $name: $got (baseline $base)"; fi
   done < "$SRC/tools/cost/baseline.txt"
-  # the shell's gate (docs/cost.md): hosted at rest at most 1,000 a block; hosted at 8 voices at most 3 % over the core alone
+  # the shell's gate (docs/cost.md): hosted at rest at most 1,000 a block, with 1 sound and with 8 sounds prepared (the main port);
+  # hosted at 8 voices at most 3 % over the core alone
   hr=$(awk '$1=="hosted-rest" {print $5}' "$OUT/summary.txt"); h8=$(awk '$1=="hosted-held8" {print $5}' "$OUT/summary.txt")
-  c8=$(awk '$1=="held8" {print $5}' "$OUT/summary.txt")
-  if [ "$(awk -v r="$hr" -v h="$h8" -v c="$c8" 'BEGIN {print (r > 1000 || h > c * 1.03)}')" = 1 ]; then
-    echo "SHELL GATE: hosted rest $hr (at most 1000), hosted 8 voices $h8 against the core's $c8 (at most +3 %)"; fail=1
-  else echo "ok shell: hosted rest $hr, hosted 8 voices $h8 (core $c8)"; fi
+  hs=$(awk '$1=="hosted-rest-s8-main" {print $5}' "$OUT/summary.txt"); c8=$(awk '$1=="held8" {print $5}' "$OUT/summary.txt")
+  if [ "$(awk -v r="$hr" -v s="$hs" -v h="$h8" -v c="$c8" 'BEGIN {print (r > 1000 || s > 1000 || h > c * 1.03)}')" = 1 ]; then
+    echo "SHELL GATE: hosted rest $hr and with 8 sounds $hs (at most 1000), hosted 8 voices $h8 against the core's $c8 (at most +3 %)"; fail=1
+  else echo "ok shell: hosted rest $hr, with 8 sounds $hs, hosted 8 voices $h8 (core $c8)"; fi
   exit $fail
 fi

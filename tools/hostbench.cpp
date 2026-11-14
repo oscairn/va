@@ -5,7 +5,7 @@
 //   hostbench PLUGIN.clap CASE WARM MEAS      CASE: rest | held N | pattern (as tools/vcbench.cpp's); with HOSTBENCH_WHOLE set,
 //                                             one dump for the whole measured window; with HOSTBENCH_SOUNDS=N, N sounds of probe A
 //                                             share the instance, sound k on channel k and output bus k (nine ports, activated),
-//                                             the notes taken in turn
+//                                             the notes taken in turn; with HOSTBENCH_PORTS=1 as well, the main port only
 #include <clap/clap.h>
 #include <dlfcn.h>
 #include <oscairn-clap/sound-contexts.h>
@@ -80,7 +80,9 @@ int main(int argc, char** argv) {
         const uint32_t id = sc->prepare(p, "part", &bus, 1, text.c_str(), nullptr, nullptr, 0);
         if (id == CLAP_INVALID_ID || !sc->select(p, id, int16_t(k))) { std::fprintf(stderr, "sound %d not prepared\n", k); return 1; }
     }
-    if (sounds > 1) {
+    const char* ports_ = std::getenv("HOSTBENCH_PORTS");
+    const bool mainOnly = ports_ && std::atoi(ports_) == 1;
+    if (sounds > 1 && !mainOnly) {
         auto* act = static_cast<const clap_plugin_audio_ports_activation_t*>(p->get_extension(p, CLAP_EXT_AUDIO_PORTS_ACTIVATION));
         for (uint32_t k = 1; k < 9; ++k) act->set_active(p, false, k, true, 32);
     }
@@ -118,7 +120,7 @@ int main(int argc, char** argv) {
         }
         clap_process_t pr{};
         pr.steady_time = b * B; pr.frames_count = B; pr.in_events = &in.api; pr.out_events = &kOut;
-        pr.audio_outputs = out; pr.audio_outputs_count = sounds > 1 ? 9 : 1;
+        pr.audio_outputs = out; pr.audio_outputs_count = sounds > 1 && !mainOnly ? 9 : 1;
         const bool m = b >= first;
         if (m && (!whole || b == first)) CALLGRIND_ZERO_STATS;
         p->process(p, &pr);

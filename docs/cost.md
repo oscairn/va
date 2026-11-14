@@ -19,8 +19,8 @@ not a CTest test. Shown failing with a baseline lowered to 50000 for 8 voices (e
 
 `tools/hostbench.cpp` drives the built plugin as the host does: a sound-context snapshot of probe A loaded, 128-frame blocks at
 48 kHz, `active_voices` and `notes` after every block; `cg.sh` measures it as the `hosted-*` cases (per block: `process`,
-`active_voices` and `notes`). **Gate** (in `cg.sh check`): hosted at rest at most 1,000 instructions a block; hosted at 8 voices
-at most 3 % over the core alone (`held8`). Shown failing with the shell of commit bf4a13f (hosted rest 2,611: "SHELL GATE").
+`active_voices` and `notes`). **Gate** (in `cg.sh check`): hosted at rest at most 1,000 instructions a block, with one sound and
+with 8 sounds prepared on the main port (`hosted-rest-s8-main`); hosted at 8 voices at most 3 % over the core alone (`held8`). Shown failing with the shell of commit bf4a13f (hosted rest 2,611: "SHELL GATE").
 
 | case | round 6, before | round 6 |
 |---|---|---|
@@ -54,6 +54,37 @@ instances (each its own pool), which sharing does not change; it is not under th
 Gates on the same run: core rest 211, held 8 96,257 (12.0k a voice), hosted rest 666, hosted 8 held 98,867 (+2.7 % over the
 core), hosted pattern 62,167. Memory: the instance estimate (`oscairn.memory`) went from 300,808 to 301,120 shared bytes
 (+312) and from 1,520 to 1,524 bytes a context.
+
+### 0.11.0: the per-sound work trimmed
+
+The sharing cases are now in `cg.sh` and its checked baseline (`hosted-rest-s5`, `-s8`, `hosted-held8-s5`, `-s8`: nine ports
+activated; `hosted-rest-s8-main`: 8 sounds prepared, the main port only). The same script on 0.10.0 (7f71532) and on 0.11.0:
+
+| case | 0.10.0 | 0.11.0 |
+|---|---|---|
+| hosted rest, 1 sound | 666 | 667 |
+| hosted rest, 8 sounds, the main port | 806 | **807** (gate 1,000) |
+| hosted rest, 5 / 8 sounds, nine ports | 2,077 / 2,125 | 1,906 / 1,966 |
+| hosted, 8 held voices in 1 sound | 98,948 | **92,110** (core 89,829: +2.5 %) |
+| hosted, 8 held voices over 5 sounds | 258,655 | **226,057** |
+| hosted, 8 held voices over 8 sounds | 411,384 | **359,607** |
+
+What changed: each sound's control constants (the boxes' and the host's destinations, the bend, the step coefficients) are built
+once a render call instead of at every 16-frame step (they change only at events, between calls): 6.5k a block less for each
+sound with voices, the same output bit for bit; the shell sets a sound's outputs when it first renders in a block, so a block at
+rest looks at no sound, and asks the core about a sound's voices only after its `changes()` counter moved or while one fades.
+With nine ports activated, rest stays over 1,000: 960 instructions of it are the zeroing of the 18 activated channels (CLAP's
+constant flag does not spare the plugin writing them), the rest the pass over the ports. Each sound with voices still renders
+its own lanes, so a partly filled lane still costs a full one: sharing lanes across sounds is a design for a later round
+(`docs/design.md`, sounds sharing lanes: about 100k hosted expected for 8 voices over 5 sounds).
+
+State touched a block, 8 held voices of probe A (the oscillator tables aside, the same in every case: two levels of each
+oscillator's set a voice): each lane reads or writes 83 of its 103 per-voice fields (counted by instrumenting the field accessors
+in a scratch build: 1,328 bytes a lane); each sound with voices adds at most its `Sound` (1,872 bytes), its box sources and
+destinations (about 300), its control constants and accumulators on the stack (about 800) and its bus (1 KB of output). So about
+2.7 KB of lanes and 4 KB of sound and output state in 1 sound, 6.6 KB and 20 KB over 5 sounds, 10.6 KB and 32 KB over 8 (the
+per-sound terms are upper bounds from the sizes, not measured). Memory: one more per-voice field (the quiet end's level, 256
+bytes a sound's pool): `sizeof(Core)` 235,712 -> 237,760 bytes (+2,048), which the instance estimate (`oscairn.memory`: the engine's size, the core in it) carries.
 
 ## Code layout (a build-time choice)
 
@@ -100,6 +131,14 @@ default. One lane at a time is now cheaper than two interleaved in layout 0 (88,
 layout 2: 81,913 against 82,889): the interleaved filter loop of two lanes no longer pays in instructions.
 
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
+
+**0.11.0** (the control constants once a render call, the quiet end of a release, the shell's per-sound trims): rest 211, 1 held
+44,509, 4 held 44,533, 8 held 89,829 (**11.2k a voice**), 16 held 174,366, 8 held one lane at a time 83,805, the pattern 53,309 (notes
+also end at their quiet end); hosted rest 667, hosted 8 held 92,110 (+2.5 % over the core), hosted pattern 54,889; plans per voice at
+8: saw 3,870, saw + pulse 5,663, saw + LPF24 9,448, saw + LPF18 6,043, three LFOs 11,743, 16 boxes 11,828, a third oscillator 13,346, a
+pulse width LFO 13,202, a third oscillator with the saturators (plan 15) **13,766** (gate 15k), unison mode 2 (plan 16, 32 voices)
+343,438 a block, 10.7k a voice. `core.cpp` text 261,772 bytes (+3,400 over 0.10.0). No table bytes added. The regression
+baseline takes these figures and the sharing cases.
 
 **Round 8** (unison, voltage drift to 127, the short release laws, the filter LFO's depth law, the saturators' DC removal): rest 211,
 1 held 51,230, 4 held 51,254, 8 held 96,550 (**12.1k a voice**), 16 held 181,087, 8 held one lane at a time 90,526, the pattern 60,762
