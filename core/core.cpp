@@ -578,6 +578,7 @@ void Core::unhold_(uint32_t si, uint32_t v) {
 }
 
 void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
+    ++changes_;
     if (v >= kMaxVoices || si >= kMaxSounds || !sound_[si].loaded) return;
     kill(v);
     Pool& p = pool_[si]; const Sound& s = sound_[si];
@@ -660,6 +661,7 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
 }
 
 void Core::noteOff(uint32_t v) {
+    ++changes_;
     if (v >= kMaxVoices || slot_[v].sound < 0) return;
     const uint32_t si = uint32_t(slot_[v].sound);
     Pool& p = pool_[si]; const Sound& s = sound_[si];
@@ -698,6 +700,7 @@ void Core::noteOff(uint32_t v) {
 }
 
 void Core::choke(uint32_t v, uint32_t frames) {
+    ++changes_;
     if (v >= kMaxVoices || slot_[v].sound < 0) return;
     if (slot_[v].parked) { unhold_(uint32_t(slot_[v].sound), v); slot_[v] = Slot{}; return; }
     Pool& p = pool_[slot_[v].sound];
@@ -708,6 +711,7 @@ void Core::choke(uint32_t v, uint32_t frames) {
 
 // Frees every voice of a note (all its unison copies) at once: a note never loses a part of itself.
 void Core::free_(uint32_t si, uint32_t owner) {
+    ++changes_;
     Pool& p = pool_[si];
     slot_[owner] = Slot{};
     for (auto& x : slot_) if (x.parked && x.sound == int(si) && x.owner == owner) x = Slot{};  // the keys it took over end with it
@@ -725,6 +729,7 @@ void Core::free_(uint32_t si, uint32_t owner) {
 }
 
 void Core::kill(uint32_t v) {
+    ++changes_;
     if (v >= kMaxVoices || slot_[v].sound < 0) return;
     const uint32_t si = uint32_t(slot_[v].sound);
     unhold_(si, v);
@@ -749,6 +754,7 @@ void Core::setController(int ch, int source, float x) {
 }
 
 void Core::reset() {
+    ++changes_;
     for (uint32_t si = 0; si < kMaxSounds; ++si) { pool_[si].n = 0; for (uint32_t i = 0; i < kMaxVoices; ++i) clearPos(pool_[si], i); }
     for (auto& s : slot_) s = Slot{};
     for (auto& b : bend_) b = 0;

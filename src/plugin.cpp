@@ -276,29 +276,35 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     // ---- rendering ----------------------------------------------------------------------
     // Each context renders on its own, up to an event only when the event concerns it (its channel's, or every
     // channel's), so that one part's events never split another's control steps: a sound sharing the instance plays as
-    // it would alone in an instance of its own. Its outputs (its bus, or the ring-out buffer) are set at the block's start.
-    std::array<float*, kContexts> busL{}, busR{};  // audio thread, this block: each context's outputs
+    // it would alone in an instance of its own. The ports are set at the block's start; a context's outputs (its bus, or
+    // the ring-out buffer) when it first renders in the block, so a block at rest looks at no context.
+    std::array<float*, kContexts> busL{}, busR{};  // audio thread, this block: each context's outputs (once `placed`)
+    std::array<float*, kPorts> portL{}, portR{};   // audio thread, this block: each port's channels (main where not active)
+    uint32_t placed = 0;                           // audio thread, this block: the contexts whose outputs are set
     std::array<uint64_t, kContexts> liveIn{};      // audio thread: each context's active voices (as `live`)
+    std::array<uint32_t, kContexts> seen{};        // audio thread: the core's changes() when each context last looked at its voices
     void outputs(const clap_process_t* pr) {
         const uint32_t frames = pr->frames_count;
+        placed = 0;
         if (pr->audio_outputs_count == 1 && !ringOut) {  // the main port only: every sound plays there
             float* const* o = pr->audio_outputs[0].data32;
             std::memset(o[0], 0, frames * sizeof(float)); std::memset(o[1], 0, frames * sizeof(float));
-            busL.fill(o[0]); busR.fill(o[1]);
+            portL.fill(o[0]); portR.fill(o[1]);
             return;
         }
-        float* left[kPorts]; float* right[kPorts];
         for (uint32_t k = 0; k < kPorts; ++k) {  // ports 1-8 where the host gives and activated them, else main
             float* const* o = k < pr->audio_outputs_count ? pr->audio_outputs[k].data32 : nullptr;
             const bool own = o && o[0] && o[1] && pr->audio_outputs[k].channel_count >= 2 && (k == 0 || portActive[k].load(std::memory_order_relaxed));
-            left[k] = own ? o[0] : left[0]; right[k] = own ? o[1] : right[0];
+            portL[k] = own ? o[0] : portL[0]; portR[k] = own ? o[1] : portR[0];
             if (own) { std::memset(o[0], 0, frames * sizeof(float)); std::memset(o[1], 0, frames * sizeof(float)); }
         }
-        for (uint32_t slot = 0; slot < kContexts; ++slot) {  // a retiring sound's main output rings out (oscairn.sound-snapshots)
-            const uint32_t bus = uint32_t(clampParam(kBus, contexts[slot].patch.p[kBus].get()));
-            const auto* ring = bus ? nullptr : retiring(slot);
-            busL[slot] = ring ? ring[0] : left[bus]; busR[slot] = ring ? ring[1] : right[bus];
-        }
+    }
+    void place(uint32_t slot) {  // a retiring sound's main output rings out (oscairn.sound-snapshots)
+        if (placed >> slot & 1) return;
+        placed |= 1u << slot;
+        const uint32_t bus = uint32_t(clampParam(kBus, contexts[slot].patch.p[kBus].get()));
+        const auto* ring = bus ? nullptr : retiring(slot);
+        busL[slot] = ring ? ring[0] : portL[bus]; busR[slot] = ring ? ring[1] : portR[bus];
     }
     // The contexts an event acts on: those its channel selects or has voices of, or all.
     uint32_t concerned(const clap_event_header_t* h) const {
@@ -322,14 +328,18 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     void renderContext(uint32_t c, uint32_t from, uint32_t to) {
         const uint64_t mine = liveIn[c];
         if (to <= from || !mine) return;
+        place(c);
+        bool fading = false;
         for (uint64_t m = mine; m; m &= m - 1)
-            if (const uint32_t i = lowBit(m); voices[i].chokeLength && !choking[i]) {
-                core->choke(i, std::max<uint32_t>(1, voices[i].chokeLeft));
-                choking[i] = true;
+            if (const uint32_t i = lowBit(m); voices[i].chokeLength) {
+                fading = true;
+                if (!choking[i]) { core->choke(i, std::max<uint32_t>(1, voices[i].chokeLeft)); choking[i] = true; }
             }
         float* l[kContexts]; float* r[kContexts];
         for (uint32_t k = 0; k < kContexts; ++k) l[k] = busL[c] + from, r[k] = busR[c] + from;
         core->render(l, r, to - from, 1u << c);
+        if (!fading && core->changes() == seen[c]) return;  // every voice of it still sounds, none counts down: nothing to end
+        seen[c] = core->changes();
         const auto at = eventTime; eventTime = to - 1;
         for (uint64_t m = mine; m; m &= m - 1) {
             auto& v = voices[lowBit(m)];

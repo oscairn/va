@@ -128,6 +128,9 @@ public:
     void render(float* const* left, float* const* right, uint32_t frames, uint32_t only = ~0u);
 
     uint32_t voiceCount() const;
+    // Moves on at every noteOn, noteOff, choke, kill and reset, and whenever a voice ends: while it stays, every voice that
+    // sounded still sounds.
+    uint32_t changes() const { return changes_; }
     VoiceState voice(uint32_t v) const;
 
     // Test hook: render with 1 or 2 lanes interleaved in the filter loops (2 is the default).
@@ -146,6 +149,7 @@ private:
     void unhold_(uint32_t sound, uint32_t voice);
     void reap_(uint32_t sound);
     double sr_ = 48000;
+    uint32_t changes_ = 0;
     int interleave_ = 2;
     // each sound's own, so that its notes draw the same whatever other sounds play beside it (parts sharing an instance)
     uint32_t rng_[kMaxSounds] = {0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u, 0x9e3779b9u};

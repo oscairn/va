@@ -96,6 +96,7 @@ public:
     void render(float* l, float* r, uint32_t n) override { sync(); core_.render(l, r, n); }
     void render(float* const* l, float* const* r, uint32_t n, uint32_t only) override { sync(); core_.render(l, r, n, only); }
     uint32_t voiceCount() const override { return core_.voiceCount(); }
+    uint32_t changes() const override { return core_.changes(); }
     VoiceInfo voice(uint32_t v) const override {
         const auto s = core_.voice(v);
         return {s.sounding, s.releasing, s.level, s.age};

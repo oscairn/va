@@ -147,6 +147,7 @@ public:
     // (kContexts of each).
     virtual void render(float* const* left, float* const* right, uint32_t frames, uint32_t only) = 0;
     virtual uint32_t voiceCount() const = 0;                        // voices sounding, fading ones included
+    virtual uint32_t changes() const = 0;                           // moves on whenever a voice may have stopped sounding
     virtual VoiceInfo voice(uint32_t voice) const = 0;
     virtual SoundCost cost(uint32_t context) const = 0;              // any thread
     virtual void reset() = 0;                                       // every voice off now, controllers to rest

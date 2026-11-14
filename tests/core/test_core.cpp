@@ -337,10 +337,18 @@ static void testVoiceLifetime() {
     bool soundsAt = false; for (int i = 38; i < 44; ++i) soundsAt |= l[size_t(i)] != 0.f;  // the filters' sections delay a sample each
     CHECK(silentBefore && soundsAt);
     CHECK(core->voice(3).sounding && !core->voice(3).releasing && core->voiceCount() == 1);
+    // changes() stays while every voice sounds on, and moves on at a note-off and when the voice ends
+    const uint32_t held = core->changes();
+    core->render(&l[0], &r[0], 128);
+    CHECK(core->changes() == held);
     core->noteOff(3);
-    CHECK(core->voice(3).releasing);
-    uint32_t frames = 0;
-    while (core->voice(3).sounding && frames < 48000 * 3) { std::vector<float> a(128), b(128); core->render(a.data(), b.data(), 128); frames += 128; }
+    CHECK(core->voice(3).releasing && core->changes() != held);
+    uint32_t frames = 0, released = core->changes(), moved = 0;
+    while (core->voice(3).sounding && frames < 48000 * 3) {
+        std::vector<float> a(128), b(128); core->render(a.data(), b.data(), 128); frames += 128;
+        moved += core->changes() != released;
+    }
+    CHECK(moved == 1);  // only the render in which it ended
     // the release (raw 145 from sustain 140, the low-release law) ends at exactly zero about 1.03 s after the note-off
     CHECK(!core->voice(3).sounding && frames > 48000 * 9 / 10 && frames < 48000 * 12 / 10);
     core->noteOn(5, 0, 0, 90, 1.f); core->noteOn(6, 0, 0, 91, 1.f);
