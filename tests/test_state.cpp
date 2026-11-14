@@ -6,8 +6,8 @@
 TEST(parameter_metadata) {
     Inst a(false);
     const uint32_t n = a.params->count(a.p);
-    CHECK_EQ(n, 43u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
-                       // the oscillators' waves (destinations, 40-42; docs/parameters.md)
+    CHECK_EQ(n, 44u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
+                       // the oscillators' waves and the portamento time (destinations, 40-43; docs/parameters.md)
     std::vector<clap_id> seen;
     for (uint32_t i = 0; i < n; ++i) {
         clap_param_info_t info{};

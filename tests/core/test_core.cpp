@@ -603,6 +603,37 @@ static void testPortamento() {
     CHECK(m2 >= 0 && m2 < 0.005);  // starts 12 below 84: half way to 84 from 60 (72) is passed at once
     CHECK(off >= 0 && off < 0.005 && fingered >= 0 && fingered < 0.005);  // no glide: master off; fingered with no key held
 }
+// A box on the portamento time (52) moves a glide under way (va-round7 A2: a glide 48 -> 60 at time 96 jumps to 60 when the wheel
+// takes the time to 0 through a -64 box; at time 64 a +64 box at the wheel's top slows it to time 127's 0.12 semitone a second).
+static double glideKeyAfter(int time, int ratio, double wheelAt, double at) {
+    const std::string t = "vcore-patch/1 VoltageDrift=0 AmplitudeEGReleaseTime=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Osc1OscillatorWave=4 "
+        "Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Filter1FilterType=0 Filter2FilterType=0 PortamentoMaster=1 PartPortamentoTime=" + std::to_string(time) +
+        " Box1ControllerSetSwitch=1 Box1ControllerSetSource=1 Box1ControllerSetDestination=52 Box1ControllerSetRatio=" + std::to_string(ratio);
+    Patch p; char e[200]; if (!readPatch(t.c_str(), p, e, sizeof e)) { std::printf("porta box: %s\n", e); ++failures; return 0; }
+    auto core = std::make_unique<Core>(); core->prepare(48000); core->load(0, p); core->setGain(0, 1, 0);
+    std::vector<float> l(size_t((at + 0.05) * 48000) + 4800, 0.f), r(l.size());
+    core->noteOn(0, 0, 0, 48, 0.8f); core->render(l.data(), r.data(), 4800); core->noteOff(0); core->render(l.data(), r.data(), 4800);
+    core->noteOn(1, 0, 0, 60, 0.8f);
+    const size_t w = size_t(wheelAt * 48000);
+    core->render(l.data(), r.data(), uint32_t(w)); core->setController(0, 1, 1.f); core->render(&l[w], &r[w], uint32_t(l.size() - w));
+    std::vector<double> z;  // the key from the zero crossings over 20 ms from `at`
+    for (size_t i = size_t(at * 48000); i < size_t((at + 0.02) * 48000); ++i) if (l[i] < 0 && l[i + 1] >= 0) z.push_back(i + l[i] / (l[i] - l[i + 1]));
+    return z.size() < 2 ? 0 : 69 + 12 * std::log2(48000 * double(z.size() - 1) / (z.back() - z.front()) / 440);
+}
+static void testPortamentoBox() {
+    const double jump = glideKeyAfter(96, 64, 0.2, 0.25), slow = glideKeyAfter(64, 192, 0.05, 0.5);
+    std::printf("portamento time box during a glide 48 -> 60: to time 0 at 0.2 s -> key %.2f at 0.25 s; to 127 at 0.05 s -> key %.2f at 0.5 s\n", jump, slow);
+    CHECK(std::fabs(jump - 60) < 0.05);
+    CHECK(std::fabs(slow - (48 + 36.52 * 0.05 + 0.1219 * 0.46)) < 0.15);  // 1.8 semitones at time 64, then 0.12 a second
+    // coverage: times 1-7 glide as 8 (va-round7 A3, an octave at 72 -> 84: 5-95 % in 27-44 ms, time 8 35-42 ms); a box on the time in
+    // time mode 1 (the glide's rate fixed by its interval at its start) is not built
+    Gap g[64]; Patch q; q.set(PortamentoMaster, 1); q.set(PartPortamentoTime, 4);
+    CHECK(notCovered(q, g, 64) == 0);
+    q.set(Box1ControllerSetSwitch, 1); q.set(Box1ControllerSetSource, 1); q.set(Box1ControllerSetDestination, 52); q.set(PartPortamentoTimeMode, 1);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == PartPortamentoTime);
+    q.set(PartPortamentoTimeMode, 0);
+    CHECK(notCovered(q, g, 64) == 0);
+}
 // Mono (va-round4 P1 S_/U_): with portamento a note over a held key is legato (no retrigger) and its release goes back to the
 // held key; without, every change retriggers the envelopes. Single key assignment: a key struck again takes its voice over and
 // the first note-off lets that go without releasing it.
@@ -769,7 +800,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testWaveBox(); testWaves(); testPortamento(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testWaveBox(); testWaves(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

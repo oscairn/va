@@ -39,14 +39,14 @@ struct Lfo {
 // Controller box destinations the core moves (an oscillator's own destination is one entry per oscillator).
 enum Dest : uint8_t { DPitchDepth1, DPitchDepth2, DOscLevel1, DOscLevel2, DCutoff, DFegDepth, DReso, DFegAttack, DFegDecay,
                       DFegRelease, DAmpAttack, DAmpDecay, DAmpRelease, DPitchDepth3, DCutoff2, DFegDepth2, DReso2,
-                      DPw1, DPw2, DLfoCutDepth, DLfoSpeed, DFreq1, DFreq2, DFreq3, DWave1, DWave2, DWave3, kDests };  // DFreq: cents, no patch parameter
+                      DPw1, DPw2, DLfoCutDepth, DLfoSpeed, DFreq1, DFreq2, DFreq3, DPorta, DWave1, DWave2, DWave3, kDests };  // DFreq: cents, no patch parameter
 // Box sources: the reference's numbers 0-17 (0 pitch bend, 1 mod wheel, 2 aftertouch, 3-4 foot controllers, 5 foot switch,
 // 6 ribbon, 7 breath, 8-15 knobs 1-8, 16-17 switches 1-2); a channel keeps kSources values.
 constexpr int kSources = 18;
 // The reference's destination numbers the core takes.
 constexpr int kDestPitchDepth = 124, kDestOscLevel = 136, kDestFegAttack = 139, kDestFegDecay = 140, kDestFegRelease = 141,
               kDestCutoff = 142, kDestFegDepth = 143, kDestReso = 145, kDestAmpAttack = 147, kDestAmpDecay = 148, kDestAmpRelease = 149,
-              kDestFreq = 123, kDestPw = 125, kDestLfoCutDepth = 144, kDestPitchLfoSpeed = 401, kDestWave = 122;
+              kDestFreq = 123, kDestPw = 125, kDestLfoCutDepth = 144, kDestPitchLfoSpeed = 401, kDestWave = 122, kDestPorta = 52;
 struct DestDef { int16_t span, lo, hi; };
 extern const DestDef kDestDefs[kDests];
 // An oscillator's table set for a wave (raw 0-4); the pulse reads the square's set (width 0.5) or, any other width, the saw's twice.
@@ -67,7 +67,7 @@ enum TauKind { TAttack, TAmpDecay, TAmpRelease, TFegDecay, TFegRelease, kTaus };
 constexpr int kHpN = 182;
 constexpr float kTopSemi = 173.2756f;
 constexpr int kFilterTypes = 9;  // thru, LPF24, LPF18, LPF12, LPF6, HPF24, HPF18, HPF12, HPF6 (the band-passes are not built)
-struct LawTables { float cutSemi[1024], hpGain[4][kHpN], pitchSemi[495], oscLevel[512], resGain[256], invTau[kTaus][256], lfoHz[416]; };
+struct LawTables { float cutSemi[1024], hpGain[4][kHpN], pitchSemi[495], oscLevel[512], resGain[256], invTau[kTaus][256], lfoHz[416], portaRate[128]; };
 const LawTables& lawTables();
 
 struct Kernel;  // core.cpp

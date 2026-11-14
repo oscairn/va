@@ -145,6 +145,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
             break;
         case kDestPitchLfoSpeed: d[nd++] = DLfoSpeed; break;
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) d[nd++] = Dest(DWave1 + n); break;
+        case kDestPorta: if (q[PortamentoMaster] && q[PartPortamentoSwitch]) d[nd++] = DPorta; break;
         default: g.add(box(b, Box1ControllerSetDestination), "controller box destination: not built"); continue;
         }
         if (!nd) continue;  // reaches no unit that sounds
@@ -181,7 +182,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
                             q[FilterCutoffEGDecayTime], q[FilterCutoffEGReleaseTime], q[AmplitudeEGAttackTime], q[AmplitudeEGDecayTime],
                             q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth], q[Filter2FilterCutoff], q[Filter2FilterCutoffEGDepth] - 256,
                             q[Filter2FilterResonance], q[Osc1OscillatorPulseWidth], q[Osc2OscillatorPulseWidth], q[Filter1FilterCutoffLFODepth],
-                            q[PitchLFOSpeed], 0, 0, 0, q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
+                            q[PitchLFOSpeed], 0, 0, 0, q[PartPortamentoTime], q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
     for (int d = 0; d < kDests; ++d) {
         auto at = [&](float t) {
             t = t < -8192 ? -8192 : t > 8192 ? 8192 : t;
@@ -325,8 +326,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
     g.need(q, AmplitudeEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
     // part
     if (q[PortamentoMaster] && q[PartPortamentoSwitch]) {
-        const int t = q[PartPortamentoTime];
-        if (t > 0 && t < 8) g.add(PartPortamentoTime, "portamento time 1-7: not measured (0 and 8-127 are)");
+        if (r.moved[DPorta] && (q[PartPortamentoTimeMode] & 1)) g.add(PartPortamentoTime, "controller box on the portamento time in time modes 1 and 3: not built");
         g.need(q, PartLegatoSlope, 0, 0, "legato slope: measured at 0 only");
     }
     g.need(q, PartVelocitySensitivityDepth, 64, 64, "velocity curve: measured only at depth 64");

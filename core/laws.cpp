@@ -127,7 +127,8 @@ void lfoLaws(Lfo& o, int wave, int speed, int reset, int phase, int delay, int f
 // Portamento (va-round4 P1: a sine glides 60 -> 72, the pitch by zero crossings): linear in semitones, rate by the time
 // (semitones a second: a line through 20-80 % of the way, residual 0.02-0.04 semitone from 49, 0.1-0.2 at 8-34); 0 is no glide;
 // log-rate between the knots. Time mode 1 (and 3) takes the octave's time whatever the interval (7 / 12 / 24 semitones in
-// 0.172 / 0.186 / 0.175 s at 49); modes 2 and 3 start at most 12 semitones away (60 -> 84 from 72). Times 1-7 not measured.
+// 0.172 / 0.186 / 0.175 s at 49); modes 2 and 3 start at most 12 semitones away (60 -> 84 from 72). Times 1-7 glide as 8 (va-round7
+// A3: an octave at 72 -> 84 5-95 % of the way in 27-44 ms, time 8 in 35-42 ms by the same tracking).
 constexpr float kPortaX[] = {8, 12, 18, 24, 34, 49, 64, 80, 96, 112, 127};
 constexpr float kPortaRate[] = {332.9f, 267.6f, 219.8f, 172.5f, 123.0f, 68.16f, 36.52f, 17.76f, 7.516f, 2.415f, 0.1219f};
 double portaRate(int t) {  // semitones a second
@@ -252,6 +253,7 @@ static bool buildLaws() {
     for (int i = 0; i <= 494; ++i) gLaw.pitchSemi[i] = float(pitchDepthSemi(i - 247));
     for (int i = 0; i < 512; ++i) gLaw.oscLevel[i] = oscLevel(i);
     for (int i = 0; i <= 415; ++i) gLaw.lfoHz[i] = float(lfoHz(i));
+    for (int i = 0; i < 128; ++i) gLaw.portaRate[i] = float(portaRate(i));
     for (int i = 0; i < 256; ++i) {
         gLaw.resGain[i] = float(std::pow(10.0, at(Law{kResGainX, kResGainY, kResGainN, 0, 255}, float(i)) / 20));
         gLaw.invTau[TAttack][i] = float(1 / attackTau(i));
@@ -301,6 +303,7 @@ const DestDef kDestDefs[kDests] = {
     // va-round6 A1: the pulse width (255), the filter LFO's depth (192), the pitch LFO's speed (415), the oscillators' frequency
     // (3600 cents: 36 semitones at a full box)
     {255, 0, 255}, {255, 0, 255}, {192, 64, 448}, {415, 0, 415}, {3600, -3600, 3600}, {3600, -3600, 3600}, {3600, -3600, 3600},
+    {127, 0, 127},  // va-round6 A1 / round 7 A2: the portamento time (127 at a full box; a glide follows it: Core::render)
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
     {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
 
@@ -430,6 +433,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.stored[DPw1] = int16_t(q[Osc1OscillatorPulseWidth]); s.stored[DPw2] = int16_t(q[Osc2OscillatorPulseWidth]);
         s.stored[DLfoCutDepth] = int16_t(q[Filter1FilterCutoffLFODepth]); s.stored[DLfoSpeed] = int16_t(q[PitchLFOSpeed]);
         for (int n = 0; n < 3; ++n) s.stored[DWave1 + n] = int16_t(q[Param(Osc1OscillatorWave + n * stride)]);
+        s.stored[DPorta] = int16_t(q[PartPortamentoTime]);
     }
     const int bs = Box2ControllerSetSwitch - Box1ControllerSetSwitch;
     for (int b = 0; b < 16; ++b) {
@@ -459,6 +463,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestLfoCutDepth: if (f1) aim(DLfoCutDepth); break;  // filter 2 has no cutoff LFO here
         case kDestPitchLfoSpeed: aim(DLfoSpeed); break;
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) aim(Dest(DWave1 + n)); break;
+        case kDestPorta: if (s.porta) aim(DPorta); break;
         default: break;
         }
         if (s.targets == before) continue;

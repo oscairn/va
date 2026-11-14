@@ -23,6 +23,7 @@ struct Ctl {  // one sound's constants for one control step of n frames
     float freq[3], pwRaw[2], lfoCut, lfoRate; // the boxes' frequency offsets (semitones), pulse widths (raw), filter LFO depth
                                               // (semitones), pitch LFO speed (cycles a frame)
     const float* tab[3]; float stride[3];     // each oscillator's table set and level stride (a box may change its wave)
+    float portaRate;                          // the glide's rate (semitones a frame; time modes 0 and 2)
     alignas(16) float bend[16];               // semitones per channel
 };
 
@@ -309,7 +310,8 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     for (int i = 0; i < W; ++i) bend[i] = c.bend[l.p->channel[l.o + i] & 15];
     vf semis = l(KEY) + load(bend);
     if (s.porta) {  // the glide's offset toward 0, linearly
-        const vf g = l(GOFF), a = vmax(vabs(g) - l(GRATE) * splat(float(c.n)), splat(0.f));
+        const vf rate = s.portaTimeMode & 1 ? l(GRATE) : splat(c.portaRate);  // a box on the time moves a glide under way (va-round7 A2)
+        const vf g = l(GOFF), a = vmax(vabs(g) - rate * splat(float(c.n)), splat(0.f));
         const vf ng = sel(g < splat(0.f), splat(0.f) - a, a);
         l.set(GOFF, ng);
         semis = semis + ng;
@@ -760,6 +762,7 @@ void Core::render(float* L, float* R, uint32_t frames) {
             c.lfoPitch[0] = s.lfoPitch[0]; c.lfoPitch[1] = s.lfoPitch[1]; c.lfoPitch[2] = s.lfoPitch[2];
             c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
             for (int o = 0; o < 3; ++o) { c.tab[o] = s.tab[o]; c.stride[o] = s.stride[o]; }
+            c.portaRate = s.portaRate;
             c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut; c.lfoRate = s.lfo[0].rate;
             if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
                 int16_t raw[kDests];
@@ -783,6 +786,7 @@ void Core::render(float* L, float* R, uint32_t frames) {
                 if (raw[DLfoCutDepth] != s.stored[DLfoCutDepth]) c.lfoCut = float(raw[DLfoCutDepth] - 256) * s.lfoCutPerStep;
                 for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)
                     if (raw[DWave1 + o] != s.stored[DWave1 + o]) { c.tab[o] = waveTable(raw[DWave1 + o], true); c.stride[o] = raw[DWave1 + o] == 4 ? 0.f : float(kTabN + 1); }
+                if (raw[DPorta] != s.stored[DPorta]) c.portaRate = t.portaRate[raw[DPorta]] * float(1 / sr_);
                 if (raw[DLfoSpeed] != s.stored[DLfoSpeed]) { const float r = t.lfoHz[raw[DLfoSpeed]] * float(1 / sr_); c.lfoRate = r < kLfoMaxRate ? r : kLfoMaxRate; }
                 const float k = -s.invSrLn2;
                 auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };
