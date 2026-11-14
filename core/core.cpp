@@ -24,6 +24,7 @@ struct Ctl {  // one sound's constants for one control step of n frames
                                               // (semitones), pitch LFO speed (cycles a frame)
     const float* tab[3]; float stride[3];     // each oscillator's table set and level stride (a box may change its wave)
     float portaRate;                          // the glide's rate (semitones a frame; time modes 0 and 2)
+    float lk[8];                              // the envelopes' per-frame log2 coefficients (ka..frl over a frame)
     alignas(16) float bend[16];               // semitones per channel
 };
 
@@ -796,10 +797,55 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
     for (uint32_t si = 0; si < kMaxSounds; ++si) if (pool_[si].n && (only >> si & 1)) busy[nb++] = uint8_t(si);
     if (!nb) return;
     FtzScope ftz;
-    alignas(16) float bend[kMaxSounds][16];  // each sound's bend per channel: fixed for this call, so once per call
+    // Each sound's control constants: the bend, the boxes' and the host's destinations are fixed for this call (they change only
+    // at events, between calls), so they are computed once per call; the step coefficients again only when a step's length changes.
+    Ctl ctl[kMaxSounds];
     for (uint32_t b = 0; b < nb; ++b) {
         const uint32_t si = busy[b];
-        for (int ch = 0; ch < 16; ++ch) bend[si][ch] = bend_[ch] * (bend_[ch] >= 0 ? sound_[si].bendUp : -sound_[si].bendDown);
+        const Sound& s = sound_[si];
+        Ctl& c = ctl[si];
+        c.n = 0; c.piOverSr = float(3.14159265358979 / sr_);
+        for (int ch = 0; ch < 16; ++ch) c.bend[ch] = bend_[ch] * (bend_[ch] >= 0 ? s.bendUp : -s.bendDown);
+        float la = s.amp.la, ld = s.amp.ld, lr = s.amp.lr, lrl = s.amp.lrLow, fla = s.feg.la, fld = s.feg.ld, flr = s.feg.lr, flrl = s.feg.lrLow;
+        for (int f = 0; f < 2; ++f) { c.cut[f] = s.flt[f].cut; c.feg[f] = s.flt[f].feg; c.res[f] = s.flt[f].res; }
+        c.lfoPitch[0] = s.lfoPitch[0]; c.lfoPitch[1] = s.lfoPitch[1]; c.lfoPitch[2] = s.lfoPitch[2];
+        c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
+        for (int o = 0; o < 3; ++o) { c.tab[o] = s.tab[o]; c.stride[o] = s.stride[o]; }
+        c.portaRate = s.portaRate;
+        c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut; c.lfoRate = s.lfo[0].rate;
+        if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
+            int16_t raw[kDests];
+            float src[kSources];
+            for (int k = 0; k < kSources; ++k) src[k] = src_[chan_[si]][k];
+            src[6] = panel_[si][0]; src[16] = panel_[si][1]; src[17] = panel_[si][2]; src[4] = panel_[si][3]; src[5] = panel_[si][4];
+            boxRaw(s, src, knob_[si], raw, dest_[si], mod_[si]);
+            const LawTables& t = lawTables();
+            c.lfoPitch[0] = t.pitchSemi[raw[DPitchDepth1]]; c.lfoPitch[1] = t.pitchSemi[raw[DPitchDepth2]]; c.lfoPitch[2] = t.pitchSemi[raw[DPitchDepth3]];
+            if (s.osc[0] > 0) c.osc[0] = t.oscLevel[raw[DOscLevel1]];  // an oscillator at level 0 is not in the plan
+            if (s.osc[1] > 0) c.osc[1] = t.oscLevel[raw[DOscLevel2]];
+            for (int f = 0; f < 2; ++f) {
+                const Dest dc = f ? DCutoff2 : DCutoff, dd = f ? DFegDepth2 : DFegDepth, dr = f ? DReso2 : DReso;
+                c.cut[f] = t.cutSemi[raw[dc]];
+                const float steps = float(raw[dd]) + (f ? 0.f : s.fegOffSteps);  // the part's offset (filter 1), then the depth's stop (+-192)
+                c.feg[f] = kFegSemisPerStep * (steps < -192.f ? -192.f : steps > 192.f ? 192.f : steps);
+                c.res[f] = float(raw[dr]);
+            }
+            for (int n = 0; n < 3; ++n) c.freq[n] = float(raw[DFreq1 + n]) * 0.01f;
+            c.pwRaw[0] = float(raw[DPw1]); c.pwRaw[1] = float(raw[DPw2]);
+            if (raw[DLfoCutDepth] != s.stored[DLfoCutDepth]) c.lfoCut = float(raw[DLfoCutDepth] - 256) * s.lfoCutPerStep;
+            for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)
+                if (raw[DWave1 + o] != s.stored[DWave1 + o]) { c.tab[o] = waveTable(raw[DWave1 + o], true); c.stride[o] = raw[DWave1 + o] == 4 ? 0.f : float(kTabN + 1); }
+            if (raw[DPorta] != s.stored[DPorta]) c.portaRate = t.portaRate[raw[DPorta]] * float(1 / sr_);
+            if (raw[DLfoSpeed] != s.stored[DLfoSpeed]) { const float r = t.lfoHz[raw[DLfoSpeed]] * float(1 / sr_); c.lfoRate = r < kLfoMaxRate ? r : kLfoMaxRate; }
+            const float k = -s.invSrLn2;
+            auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };
+            la = tau(TAttack, DAmpAttack, la); ld = tau(TAmpDecay, DAmpDecay, ld);
+            if (raw[DAmpRelease] != s.stored[DAmpRelease]) { lr = k * t.invTau[TAmpRelease][raw[DAmpRelease]]; lrl = lr * (s.amp.lrLow / s.amp.lr); }  // the slower law keeps its ratio
+            fla = tau(TAttack, DFegAttack, fla); fld = tau(TFegDecay, DFegDecay, fld);
+            if (raw[DFegRelease] != s.stored[DFegRelease]) { flr = k * t.invTau[TFegRelease][raw[DFegRelease]]; flrl = flr * (s.feg.lrLow / s.feg.lr); }
+        }
+        const float lk[8] = {la, ld, lr, lrl, fla, fld, flr, flrl};
+        std::memcpy(c.lk, lk, sizeof lk);
     }
     for (uint32_t done = 0; done < frames;) {
         const int n = int(frames - done < uint32_t(kSub) ? frames - done : uint32_t(kSub));
@@ -807,50 +853,13 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
             const uint32_t si = busy[b];
             Pool& p = pool_[si]; const Sound& s = sound_[si];
             if (!p.n) continue;  // its last voice ended at an earlier step
-            Ctl c;
-            c.n = n; c.rn = 1.f / float(n); c.piOverSr = float(3.14159265358979 / sr_);
-            const float fn = float(n);
-            float la = s.amp.la, ld = s.amp.ld, lr = s.amp.lr, lrl = s.amp.lrLow, fla = s.feg.la, fld = s.feg.ld, flr = s.feg.lr, flrl = s.feg.lrLow;
-            for (int f = 0; f < 2; ++f) { c.cut[f] = s.flt[f].cut; c.feg[f] = s.flt[f].feg; c.res[f] = s.flt[f].res; }
-            c.lfoPitch[0] = s.lfoPitch[0]; c.lfoPitch[1] = s.lfoPitch[1]; c.lfoPitch[2] = s.lfoPitch[2];
-            c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
-            for (int o = 0; o < 3; ++o) { c.tab[o] = s.tab[o]; c.stride[o] = s.stride[o]; }
-            c.portaRate = s.portaRate;
-            c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut; c.lfoRate = s.lfo[0].rate;
-            if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
-                int16_t raw[kDests];
-                float src[kSources];
-                for (int k = 0; k < kSources; ++k) src[k] = src_[chan_[si]][k];
-                src[6] = panel_[si][0]; src[16] = panel_[si][1]; src[17] = panel_[si][2]; src[4] = panel_[si][3]; src[5] = panel_[si][4];
-                boxRaw(s, src, knob_[si], raw, dest_[si], mod_[si]);
-                const LawTables& t = lawTables();
-                c.lfoPitch[0] = t.pitchSemi[raw[DPitchDepth1]]; c.lfoPitch[1] = t.pitchSemi[raw[DPitchDepth2]]; c.lfoPitch[2] = t.pitchSemi[raw[DPitchDepth3]];
-                if (s.osc[0] > 0) c.osc[0] = t.oscLevel[raw[DOscLevel1]];  // an oscillator at level 0 is not in the plan
-                if (s.osc[1] > 0) c.osc[1] = t.oscLevel[raw[DOscLevel2]];
-                for (int f = 0; f < 2; ++f) {
-                    const Dest dc = f ? DCutoff2 : DCutoff, dd = f ? DFegDepth2 : DFegDepth, dr = f ? DReso2 : DReso;
-                    c.cut[f] = t.cutSemi[raw[dc]];
-                    const float steps = float(raw[dd]) + (f ? 0.f : s.fegOffSteps);  // the part's offset (filter 1), then the depth's stop (+-192)
-                    c.feg[f] = kFegSemisPerStep * (steps < -192.f ? -192.f : steps > 192.f ? 192.f : steps);
-                    c.res[f] = float(raw[dr]);
-                }
-                for (int n = 0; n < 3; ++n) c.freq[n] = float(raw[DFreq1 + n]) * 0.01f;
-                c.pwRaw[0] = float(raw[DPw1]); c.pwRaw[1] = float(raw[DPw2]);
-                if (raw[DLfoCutDepth] != s.stored[DLfoCutDepth]) c.lfoCut = float(raw[DLfoCutDepth] - 256) * s.lfoCutPerStep;
-                for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)
-                    if (raw[DWave1 + o] != s.stored[DWave1 + o]) { c.tab[o] = waveTable(raw[DWave1 + o], true); c.stride[o] = raw[DWave1 + o] == 4 ? 0.f : float(kTabN + 1); }
-                if (raw[DPorta] != s.stored[DPorta]) c.portaRate = t.portaRate[raw[DPorta]] * float(1 / sr_);
-                if (raw[DLfoSpeed] != s.stored[DLfoSpeed]) { const float r = t.lfoHz[raw[DLfoSpeed]] * float(1 / sr_); c.lfoRate = r < kLfoMaxRate ? r : kLfoMaxRate; }
-                const float k = -s.invSrLn2;
-                auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };
-                la = tau(TAttack, DAmpAttack, la); ld = tau(TAmpDecay, DAmpDecay, ld);
-                if (raw[DAmpRelease] != s.stored[DAmpRelease]) { lr = k * t.invTau[TAmpRelease][raw[DAmpRelease]]; lrl = lr * (s.amp.lrLow / s.amp.lr); }  // the slower law keeps its ratio
-                fla = tau(TAttack, DFegAttack, fla); fld = tau(TFegDecay, DFegDecay, fld);
-                if (raw[DFegRelease] != s.stored[DFegRelease]) { flr = k * t.invTau[TFegRelease][raw[DFegRelease]]; flrl = flr * (s.feg.lrLow / s.feg.lr); }
+            Ctl& c = ctl[si];
+            if (c.n != n) {
+                const float fn = float(n);
+                c.n = n; c.rn = 1.f / fn;
+                c.ka = stepCoef(c.lk[0] * fn); c.kd = stepCoef(c.lk[1] * fn); c.kr = stepCoef(c.lk[2] * fn); c.krl = stepCoef(c.lk[3] * fn);
+                c.fa = stepCoef(c.lk[4] * fn); c.fd = stepCoef(c.lk[5] * fn); c.fr = stepCoef(c.lk[6] * fn); c.frl = stepCoef(c.lk[7] * fn);
             }
-            c.ka = stepCoef(la * fn); c.kd = stepCoef(ld * fn); c.kr = stepCoef(lr * fn); c.krl = stepCoef(lrl * fn);
-            c.fa = stepCoef(fla * fn); c.fd = stepCoef(fld * fn); c.fr = stepCoef(flr * fn); c.frl = stepCoef(flrl * fn);
-            std::memcpy(c.bend, bend[si], sizeof c.bend);
             vf accL[kSub], accR[kSub];
             for (int k = 0; k < n; ++k) accL[k] = accR[k] = splat(0.f);
             s.kernel->run(p, s, c, accL, accR, interleave_);
