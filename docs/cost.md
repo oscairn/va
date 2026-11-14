@@ -1,0 +1,107 @@
+# Cost
+
+## Method
+
+`tools/cost/cg.sh` builds `tools/vcbench.cpp` with the core at `-O3 -mcpu=cortex-a53` (g++ 13.3,
+aarch64 Linux, NEON) and runs each case under callgrind with one dump per measured 128-frame block
+at 48 kHz (the first measured block dropped). Cases, all on the "probe A" patch: rest (no voice), 1, 4,
+8 and 16 held voices, the pattern (keys 84 88 91 88, sixteenths at 84 BPM, gate 0.9; the
+engine keeps 4.1 voices on average), shedding 8 or 16 held voices in one block, and the plan
+variants in `tools/cost/plans/` (8 held voices each).
+
+The gate: at most 15k instructions a voice at 8 voices, at most 4k at rest. **Regression gate**:
+`cg.sh SRC OUT check` fails (exit 1) when a case's mean is more than 10 % over
+`tools/cost/baseline.txt`. It needs valgrind, so it is a documented script, run in the aarch64
+container (`docker run --rm -v "$PWD":/src:ro -v /tmp/cg:/out IMAGE sh /src/tools/cost/cg.sh /src /out check`),
+not a CTest test. Shown failing with a baseline lowered to 50000 for 8 voices (exit 1, "REGRESSION held8").
+
+## Instructions per block (aarch64, NEON, two lanes interleaved)
+
+**Round 4** (commit bb74f6a: the part's filter offsets, the box destinations as parameters, portamento, mono, the new waves,
+the third oscillator, the pulse width LFO): rest 215, 1 held 35,916, 4 held 36,348, 8 held 60,228 (7.5k a voice, gate 15k),
+16 held 108,005, 8 held one lane at a time 60,228, the pattern 40,888 (max 61,064); shedding 8 / 16: 64,645 / 112,677 then
+22,580 / 40,292, then rest. `cg.sh check` against the baseline: every case within it (held8 +1.6 %, the pattern +2.8 %).
+Plans (8 held voices, per voice): saw 4,576; saw + pulse 6,256; saw + LPF24 5,843; probe A 7,529; + HPF24 8,559; + the pitch LFO
+7,709; + three LFOs 7,937; + a random LFO 7,718; three LFOs and 16 boxes 8,606; **a third oscillator (a sine) 9,752**; **a pulse
+width moved by its oscillator's LFO 9,615**. Gates for the new plan classes: three oscillators with two filters and LFOs at most
+15k a voice (9.8k); a pulse width LFO the same (9.6k). `vcore::estimateCost` adds 2,225 for a third oscillator and 416 for an
+oscillator LFO (with its pulse's second read). The probe A plan rose by about 117 a voice since round 3 (not broken down by cause).
+
+Round 3, at the controller boxes (the earlier figures in brackets):
+
+| case | mean | max | per voice |
+|---|---|---|---|
+| rest | 216 | 216 | |
+| 1 held | 34,765 | 34,765 | (one lane of 4 costs as full) |
+| 4 held | 35,221 | 35,221 | 8.8k |
+| 8 held | 59,293 | 59,311 | **7.4k** (gate 15k) [6.9k] |
+| 16 held | 107,214 | 107,231 | 6.7k |
+| 8 held, one lane at a time | 59,069 | 59,087 | 7.4k |
+| pattern | 39,776 | 59,544 | |
+
+Plans (8 held voices; per voice): saw 4,452; saw + pulse 6,130; saw + LPF24 5,740; saw + pulse + LPF24 (probe A, two
+knob boxes) 7,412; the same + HPF24 8,558; probe A + the pitch LFO 7,546; + the pitch, filter and amplitude LFOs 7,796; + a
+random pitch LFO at speed 320 7,551; the three LFOs and 16 boxes (every live source, eleven destinations, a measured curve
+on five) 8,449. Gates per plan class: two oscillators, two filters, three LFOs and 16 boxes at most 15k a voice (8.4k).
+Every plan rose by about 3.7k a block (470 a voice at 8): the envelope coefficients now come from a series in double (eight
+a control step, once per sound: the polynomial they replaced was 2e-4 off) and the boxes' destinations are looked up once
+per sound a step. The boxes cost about 47 a voice each at 8 voices (they run per sound, not per voice: fewer voices, a larger
+share). The filter sections compute their normalisers every sample (two divisions a sample a section pair). The oscillators
+read band-limited tables (one read a saw, one a pulse of width 0.5 from its own tables, two any other width); the drift's
+knots are drawn per voice at control rate. `vcore::estimateCost` is built from these differences (base 2,780, a table
+read 1,670, LPF24 1,295, HPF24 1,155, an LFO 130, a box 47; a pulse is counted as two reads, which over-estimates a pulse of
+width 0.5). The shell reports a sound's estimate through `oscairn.voice-budget` before any note sounds, at 1.15 ns an
+instruction (device-calibrated for this code at commit 2549b96; not re-timed for this round's code) and scaled to the host's block.
+The oscillator tables (4 x 41 levels x 2049 floats and one sine level, 1.35 MB, built once per process) are a memory-access cost callgrind does
+not count.
+
+## Shedding voices (the project's overload rule)
+
+A voice given up (`choke`) fades over the shell's 3 ms (144 frames) and its lane is freed when the
+fade ends. Measured (round 3), the blocks from the shed block on: 8 voices 63,706 / 18,339 / 216 / 216; 16
+voices 111,882 / 32,535 / 216. The shed block costs the held block plus 4.4k (8 voices) and the next
+block about 2/7 of it (the last 16 frames of the fade): about 2.6k extra a shed voice, less than
+the 6.9k one block of that voice costs. The fade starts in the block the limit drops.
+
+## Time on this Mac (Apple silicon, thread CPU per block, `vcbench time`)
+
+| case | two lanes interleaved | one lane |
+|---|---|---|
+| rest | 0.19 us | 0.16 us |
+| 1 held | 2.51 us | 2.59 us |
+| 8 held | 3.88 us | 4.45 us |
+| 16 held | 6.92 us | 8.37 us |
+| pattern | 2.68 us | 2.77 us |
+
+Two lanes interleaved are the default: bit-identical output (`tests/core`), equal instruction count,
+3-17 % faster here, about 20 % on the device per the spike.
+
+## Device
+
+Static binaries for the device's time mode: `vcbench-time-neon` and `vcbench-time-scalar`, built
+with `g++ -std=c++17 -O3 -DNDEBUG -mcpu=cortex-a53 -static` from `core/*.cpp tools/vcbench.cpp`
+(`vcbench time [CPU]`). Timed on the device at commit 2549b96 (thread CPU per 128-frame block, a pinned idle
+core, mean / median / p99): NEON 8 held 62.0 / 60.8 / 80.3 us, 16 held 125 / 121 / 173 us, the pattern
+44.3 / 36.6 us (unpinned 39.4 / 36.3 / 65.4); scalar 8 held 149 us, 16 held 299 us. About 7.8 us a voice and 1.13 ns
+an instruction: slower per instruction than the placeholder spike (42-53 us for 8 voices at 5.5k instructions a
+voice), which had no tables: the band-limited tables cost time that callgrind does not count. 8 voices are 4.7 % of
+a 1,333 us block.
+
+## Table memory
+
+Read by the voices (float, 41 levels of 2049 samples, a level 8.2 KB; two adjacent levels a voice at a time):
+
+| plan | tables | bytes |
+|---|---|---|
+| saw | the saw set | 336 KB |
+| pulse of width 0.5 | the square set | 336 KB |
+| pulse of any other width | the saw set (two reads) | 336 KB |
+| saw + pulse 0.5 (probe A) | both sets | 672 KB |
+| triangle | the triangle set | 336 KB |
+| saw 2 | the saw 2 set | 336 KB |
+| sine (any oscillator) | one level | 8.2 KB |
+| a third oscillator | its wave's set (probe A + a sine: 680 KB) | as its wave |
+| the LFOs | none (computed) | 0 |
+| controller boxes | the laws at every raw value (`LawTables`, built once per process) and the curves' knots, read once per sound a step | 17.9 KB + 0.5 KB |
+
+A voice touches two adjacent levels of a set (16 KB) per oscillator; which ones moves with its pitch.

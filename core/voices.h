@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Internal plain data of the core (included by vcore.h): a sound with its laws applied, and one
+// sound's voices as structure of arrays. Every value here is a bounded float or integer.
+#pragma once
+#include <cstdint>
+
+namespace vcore {
+
+constexpr int kSub = 16;
+// Band-limited oscillator tables: kLevels levels of kTabN samples (plus one guard sample each).
+constexpr int kTabN = 2048, kLevels = 41;
+// The table sets (laws.cpp bandTables): saw, square (width 0.5), triangle, saw 2, each kLevels levels; then the sine, one level.
+enum TabSet { TSaw, TSquare, TTriangle, TSaw2, TSine };  // control rate: at most this many frames between two control steps
+
+// One envelope's laws, per frame at the prepared rate. A segment moves toward its target as
+// level = target + (level - target) * 2^(l * frames).
+struct Env {
+    float la, ld, lr;   // attack, decay, release (log2 of the per-frame coefficient, negative)
+    float lrLow;        // release below the low-release threshold (slower)
+    float sustain;      // linear 0..1
+    float endHigh, endLow;  // release target below zero, as a fraction of the level at note-off
+    float threshold;    // the level at note-off that separates the two release laws
+};
+
+// One LFO's laws (pitch, filter cutoff or amplitude): per frame at the prepared rate.
+struct Lfo {
+    float rate = 0;          // cycles per frame
+    uint8_t wave = 0;        // 0 saw (rising from 0), 1 square (+1 first), 2 triangle, 3 sine, 4 random (held a cycle)
+    bool reset = false;      // key-on reset: the cycle starts at phase0 on each note
+    float phase0 = 0;        // 0..1
+    float delay = 0;         // frames from the note-on before the LFO sounds (it runs during the delay)
+    float fadeRate = 1e30f;  // 1 / fade-in frames; the fade-in level is 1 - (1 - u)^2, u = 0..1
+};
+
+// Controller box destinations the core moves (an oscillator's own destination is one entry per oscillator).
+enum Dest : uint8_t { DPitchDepth1, DPitchDepth2, DOscLevel1, DOscLevel2, DCutoff, DFegDepth, DReso, DFegAttack, DFegDecay,
+                      DFegRelease, DAmpAttack, DAmpDecay, DAmpRelease, DPitchDepth3, kDests };
+// Box sources: the reference's numbers 0-17 (0 pitch bend, 1 mod wheel, 2 aftertouch, 3-4 foot controllers, 5 foot switch,
+// 6 ribbon, 7 breath, 8-15 knobs 1-8, 16-17 switches 1-2); a channel keeps kSources values.
+constexpr int kSources = 18;
+// The reference's destination numbers the core takes.
+constexpr int kDestPitchDepth = 124, kDestOscLevel = 136, kDestFegAttack = 139, kDestFegDecay = 140, kDestFegRelease = 141,
+              kDestCutoff = 142, kDestFegDepth = 143, kDestReso = 145, kDestAmpAttack = 147, kDestAmpDecay = 148, kDestAmpRelease = 149;
+struct DestDef { int16_t span, lo, hi; };
+extern const DestDef kDestDefs[kDests];
+// Curves with a measured law (laws.cpp): 0 linear; the others by their knots at kCurveS.
+struct CurveDef { uint8_t type, p1, p2; float y[17]; };
+constexpr int kCurveCount = 7;
+extern const CurveDef kCurves[kCurveCount];
+extern const float kCurveS[17];
+int findCurve(int bank, int type, int p1, int p2);  // -1: not measured
+float curveAt(int id, float s);
+// The laws at every raw value, built once per process (laws.cpp): the boxes look them up at control rate.
+constexpr float kFegSemisPerStep = 0.5025f;  // filter EG depth: semitones a raw step (laws.cpp)
+enum TauKind { TAttack, TAmpDecay, TAmpRelease, TFegDecay, TFegRelease, kTaus };
+struct LawTables { float cutSemi[1024], pitchSemi[495], oscLevel[512], k1[256], k2[256], gain[256], invTau[kTaus][256]; };
+const LawTables& lawTables();
+
+struct Kernel;  // core.cpp
+struct Sound {
+    bool loaded = false;
+    PlanDesc plan{};
+    const Kernel* kernel = nullptr;
+    float osc[3] = {};      // linear output level of each oscillator (0 when off)
+    float pw[3] = {};       // pulse width 0..1
+    float pwRaw[2] = {};    // the pulse width's raw value (0..255) and its LFO depth in raw steps at LFO value 1
+    float pwDepth[2] = {};
+    const float* tab[3] = {};  // each oscillator's band-limited table set
+    float stride[3] = {};   // floats from one level to the next (0: a one-level set, the sine)
+    float pitch[3] = {};    // log2 of the phase increment at key 0, at the prepared rate
+    float tabU = 0;         // 4 log2(F / sample rate): the table level is tabU - 4 log2(increment)
+    float keyOffset = 0;    // semitones added to the key (zone octave and transpose, note shift)
+    // Portamento: a new note's pitch starts at the previous note's and moves linearly to its own: portaRate semitones a frame,
+    // or (time modes 1 and 3) the whole way in the time an octave takes at that rate; modes 2 and 3 start at most an octave away.
+    // portaFull: every note glides; else (fingered) only while another key of the sound is held.
+    bool porta = false, portaFull = true, mono = false, single = false;
+    uint8_t portaTimeMode = 0;
+    float portaRate = 0;
+    float bendUp = 0, bendDown = 0;  // semitones at full bend
+    // Voltage drift, per voice and oscillator (semitones): mean + a static deviation (uniform +-driftStatic) + a
+    // random movement driftAmp x r(t), r linear between uniform values in [-1, 1] drawn every driftPeriod frames.
+    float driftMean = 0, driftStatic = 0, driftAmp = 0, driftRate = 0;  // driftRate: knots per frame
+    float driftCutMean = 0, driftCutSpread = 0;                          // cutoff: static per voice (semitones)
+    float lpSemi = 0, lpK1 = 1, lpK2 = 1, lpGain = 1;  // cutoff (semitones re 1 Hz), 1/Q of each section, pass-band gain
+    float lpTop = 0;                                   // the highest cutoff (semitones re 1 Hz): the law at raw 1023
+    float hpSemi = 0;                                  // high-pass cutoff (Butterworth pair)
+    float fegSemis = 0;     // filter EG: cutoff move at EG level 1, semitones (without the boxes)
+    int16_t cutOffset = 0;  // the part's cutoff offset in raw steps (a destination value set from outside gets it too)
+    float fegOffSteps = 0;  // the part's FEG Depth offset in depth steps (added before the depth's stop, also under the boxes)
+    // Controller boxes (laws.cpp boxRaw): a box's output is (c + off - 1024) x ratio / 8 within +-8192, c its curve at the
+    // source's value (0..1023); a destination moves by its boxes' sum (within +-8192) x span / 8192 raw steps.
+    struct Box { uint8_t src, curve; float ratio, off; };
+    struct Target { uint8_t box, dest; };
+    Box box[16] = {};
+    Target target[32] = {};
+    uint8_t boxes = 0, targets = 0;
+    int16_t stored[kDests] = {};  // each destination's raw value before the boxes
+    float knob[8] = {};      // the patch's own knob values, 0..1
+    float invSrLn2 = 0;      // 1 / (sample rate x ln 2): an envelope time's per-frame log2 coefficient is -invTau x this
+    Env amp{}, feg{};
+    Lfo lfo[3];              // pitch, filter cutoff, amplitude
+    Lfo oscLfo[2];           // oscillators 1-2's own LFOs (the pulse width's)
+    float lfoPitch[3] = {};  // semitones at LFO value 1, per oscillator
+    float lfoCut = 0;        // filter LFO: semitones of cutoff at LFO value 1
+    float lfoAmp = 0;        // amplitude LFO: log2 gain = lfoAmp x value - |lfoAmp| (the top is the level; the sign inverts)
+    float level = 0;        // linear: amplitude level law, filter out level, calibration
+    float gain = 1, panL = 0.70710678f, panR = 0.70710678f;  // the caller's level and pan
+};
+// The destinations' raw values with the boxes at the given source values (src: 0..1023 per source; knob: 0..1).
+// stored: each destination's value before the boxes (null: the sound's own); mod: added to each destination's box sum before
+// its clamp (null: none).
+void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, const int16_t* stored = nullptr, const float* mod = nullptr);
+
+// Per-voice fields. Oscillators, filters, amplitude ramps, envelopes, voice data.
+enum Field {
+    PH1, PH2, PH3, INC1, DINC1, INC2, DINC2, INC3, DINC3, TA1, TB1, TW1, DTW1, TA2, TB2, TW2, DTW2, TA3, TB3, TW3, DTW3,
+    PW1, DPW1, PW2, DPW2, LO1, LO2, LOR1, LOR2,
+    L1, L2, L3, L4, LG, DLG,
+    H1, H2, H3, H4, HG, DHG,
+    GL, DGL, GR, DGR,
+    AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
+    LP0, LP1, LP2, LR0, LR1, LR2, LT,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, VOL, FADE, DFADE, FRESH,
+    NFIELDS
+};
+constexpr int kStageAttack = 0, kStageDecay = 1, kStageRelease = 2;
+
+struct Pool {
+    alignas(64) float f[NFIELDS][kMaxVoices];
+    uint8_t voice[kMaxVoices];   // the caller's voice slot of each position
+    uint8_t channel[kMaxVoices];
+    uint32_t rng[kMaxVoices];    // each voice's random source (drift knots)
+    uint32_t n = 0;              // voices 0..n-1 are live
+};
+
+}  // namespace vcore
