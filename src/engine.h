@@ -85,13 +85,27 @@ struct Cell {
 };
 // One sound's values, as the shell holds, saves and loads them: the shell's parameters and the
 // sound itself (the reference model's raw parameters, core/params.inc).
+// What the audio thread reads of the raw patch (the main thread's: a state load writes it while the sound plays), packed
+// into one atomic word by publish(): the zone's and the part's key and velocity limits (7 bits each), the unison (2 bits)
+// and mono (1 bit).
+struct Traits {
+    std::atomic<uint64_t> v{0};
+    Traits() = default;
+    Traits(const Traits& o) : v(o.v.load(std::memory_order_relaxed)) {}
+    Traits& operator=(const Traits& o) { v.store(o.v.load(std::memory_order_relaxed), std::memory_order_relaxed); return *this; }
+};
+struct Patch;
+void publish(Patch&);  // the traits from the raw patch: wherever a raw patch becomes a playing sound's
 struct Patch {
     Cell p[kParamCount];
     vcore::Patch raw;
-    Patch() { for (uint32_t i = 0; i < kParamCount; ++i) p[i].set(float(kParams[i].def)); }
+    Traits traits;
+    Patch() { for (uint32_t i = 0; i < kParamCount; ++i) p[i].set(float(kParams[i].def)); publish(*this); }
 };
-// Whether a note sounds at all in this patch (its key and velocity limits); velocity 0..1.
+// Whether a note sounds at all in this patch (its key and velocity limits); velocity 0..1. Audio thread: from its traits.
 bool keySounds(const Patch&, int16_t key, double velocity);
+uint32_t unisonVoices(const Patch&);  // the engine voices one note takes (1, 2 or 4)
+bool mono(const Patch&);              // its notes share one voice
 
 struct VoiceInfo {
     bool sounding = false;   // false: the slot is free (never started, ended, killed or faded out)

@@ -100,9 +100,9 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         Base::noteOn(n);
     }
     bool accepts(const Patch& p, const clap_event_note_t& n) { return keySounds(p, n.key, n.velocity); }
-    bool mono(const Context& c) const { return c.patch.raw[vcore::PartMonoPolyMode] == 0; }  // its notes share one voice
+    bool mono(const Context& c) const { return va::mono(c.patch); }  // its notes share one voice
     // The engine voices one note of the sound takes (its unison copies): the budget counts each, and gives a note up only whole.
-    static uint32_t width(const Context& c) { return uint32_t(vcore::unisonVoices(c.patch.raw)); }
+    static uint32_t width(const Context& c) { return unisonVoices(c.patch); }
     // A limit under one note's voices still lets that one note sound (a unison note is never played in part).
     static uint32_t atLeast(uint32_t limit, uint32_t voices) { return limit && limit < voices ? voices : limit; }
     uint32_t index(const Voice& v) const { return uint32_t(&v - voices.data()); }
@@ -457,14 +457,14 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         syncKnobs(p);
         return true;
     }
-    void loadAll() { for (uint32_t i = 0; i < kContexts; ++i) if (contexts[i].prepared) core->loadPatch(i, contexts[i].patch); }
+    void loadAll() { for (uint32_t i = 0; i < kContexts; ++i) if (contexts[i].prepared) { va::publish(contexts[i].patch); core->loadPatch(i, contexts[i].patch); } }
     void restored() {
         loadAll();
         shownSlot = selected[0];
         for (uint32_t i = 0; i < kParamCount; ++i) values[i].store(contexts[selected[0]].patch.p[i].get(), std::memory_order_relaxed);
     }
     // Main thread, concurrently with process(): the sound is the engine's, not yet selected.
-    bool buildPreset(Context& c, std::string&) { core->loadPatch(uint32_t(&c - contexts.data()), c.patch); return true; }
+    bool buildPreset(Context& c, std::string&) { va::publish(c.patch); core->loadPatch(uint32_t(&c - contexts.data()), c.patch); return true; }
 
     static bool saveState(const clap_plugin_t* p, const clap_ostream_t* stream) {
         auto& s = self(p);
@@ -498,7 +498,9 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             s.contexts[0].patch.p[i].set(patch.p[i].get());
             if (s.contexts[0].selected.load() & 1) s.values[i].store(patch.p[i].get(), std::memory_order_relaxed);
         }
-        s.contexts[0].patch.raw = patch.raw;
+        s.contexts[0].patch.raw = patch.raw;  // main thread's; the audio thread reads the traits
+        va::publish(patch);
+        s.contexts[0].patch.traits = patch.traits;
         s.core->loadPatch(0, patch);
         select(p, 0, -1);  // the state's sound plays on every channel (from the next block)
         return true;
@@ -547,6 +549,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         syncKnobs(patch);
         auto* c = s.freeSlot();
         if (!c) return fail("no free sound context");
+        va::publish(patch);
         c->patch = patch;
         s.core->loadPatch(uint32_t(c - s.contexts.data()), patch);
         return s.publish(*c, name);

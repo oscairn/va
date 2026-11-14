@@ -10,9 +10,26 @@
 
 namespace va {
 
-bool keySounds(const Patch& p, int16_t key, double velocity) {
-    return vcore::keySounds(p.raw, key, int(std::lround(velocity * 127)));
+namespace {
+constexpr vcore::Param kLimits[8] = {vcore::ZoneZoneNoteLimitLow, vcore::ZoneZoneNoteLimitHigh, vcore::PartNoteLimitLow, vcore::PartNoteLimitHigh,
+                                     vcore::ZoneZoneVelocityLimitLow, vcore::ZoneZoneVelocityLimitHigh, vcore::PartVelocityLimitLow, vcore::PartVelocityLimitHigh};
 }
+void publish(Patch& p) {
+    uint64_t t = 0;
+    for (int k = 0; k < 8; ++k) t |= uint64_t(p.raw[kLimits[k]] & 127) << (7 * k);
+    t |= uint64_t(vcore::unisonVoices(p.raw) >> 1) << 56 | uint64_t(p.raw[vcore::PartMonoPolyMode] == 0) << 59;
+    p.traits.v.store(t, std::memory_order_relaxed);
+}
+// As vcore::keySounds, from the traits.
+bool keySounds(const Patch& p, int16_t key, double velocity) {
+    const uint64_t t = p.traits.v.load(std::memory_order_relaxed);
+    auto at = [&](int k) { return int(t >> (7 * k) & 127); };
+    auto in = [](int x, int lo, int hi) { return lo <= hi ? x >= lo && x <= hi : x >= lo || x <= hi; };
+    const int vel = int(std::lround(velocity * 127));
+    return in(key, at(0), at(1)) && in(key, at(2), at(3)) && in(vel, at(4), at(5)) && in(vel, at(6), at(7));
+}
+uint32_t unisonVoices(const Patch& p) { return uint32_t(1) << (p.traits.v.load(std::memory_order_relaxed) >> 56 & 3); }
+bool mono(const Patch& p) { return p.traits.v.load(std::memory_order_relaxed) >> 59 & 1; }
 
 namespace {
 
