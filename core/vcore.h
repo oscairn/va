@@ -57,6 +57,7 @@ struct PlanDesc {
     uint8_t filter[2];       // each filter's type (Filter1FilterType's numbers; 0 thru: no stage; the band-passes are not built)
     bool lfo[3];             // the pitch, filter and amplitude LFOs (control rate; absent: not computed)
     uint8_t boxes;           // controller boxes switched on (control rate, once per sound)
+    bool sat;                // a saturator acts (after the filters, per sample)
     uint8_t count;           // the stages in signal order
     Stage stage[7];
 };

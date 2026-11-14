@@ -794,6 +794,46 @@ static void testWaveBox() {
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Osc1OscillatorWave);
 }
 
+// The saturators against the reference (va-round7 X1: a 65.4 Hz sine through LPF24 at 1023): the fundamental's gain over drive 0
+// and the 2nd harmonic against the fundamental, filter 1 at drives 7 / 15 / 23 (+1.07 / +1.07 / +0.73 dB, -56.5 / -50.8 / -44.7 dB),
+// filter 2 at 15 (as filter 1's), the amplitude saturator at 8 (+0.61 dB, -59.7 dB). A drive not measured is reported.
+static void testSaturators() {
+    const std::string sine = "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=1023 ";
+    double h0[2], h[2];
+    harmonics(sine.c_str(), 36, h0, 2);
+    const struct { const char* extra; double gain, h2; } cases[] = {
+        {"Filter1FilterSaturatorDrive=7", 1.070, -56.5}, {"Filter1FilterSaturatorDrive=15", 1.072, -50.8}, {"Filter1FilterSaturatorDrive=23", 0.727, -44.7},
+        {"Filter2FilterType=5 Filter2FilterSaturatorDrive=15", 1.072 - 0.65, -50.8}, {"AmplitudeSaturatorDrive=8", 0.609, -59.7}};
+    for (const auto& c : cases) {
+        harmonics((sine + c.extra).c_str(), 36, h, 2);
+        std::printf("saturator %s: h1 %+.3f dB, h2 %.1f dB re h1 (reference %+.3f, %.1f)\n", c.extra, h[0] - h0[0], h[1] - h[0], c.gain, c.h2);
+        CHECK(std::fabs(h[0] - h0[0] - c.gain) < 0.1 && std::fabs(h[1] - h[0] - c.h2) < 1.0);
+    }
+    // the amplitude saturator acts after the amplitude EG (va-round7 S2: drive 23, the EG decaying, h2 against h1 falls 18.4 dB as the
+    // level falls 18.0 dB; the filter's stays within 0.1 dB)
+    auto decaying = [&](const char* extra, double* fall, double* h2fall) {
+        std::vector<float> L; double a[2], b[2];
+        const std::string t = sine + "AmplitudeEGDecayTime=200 AmplitudeEGSustainLevel=0 " + extra;
+        harmonics(t.c_str(), 36, a, 2, 4410, 8820, &L); harmonics(t.c_str(), 36, b, 2, 4410 + 2 * 44100, 8820);
+        *fall = a[0] - b[0]; *h2fall = (a[1] - a[0]) - (b[1] - b[0]);
+    };
+    double fall, h2fall;
+    decaying("AmplitudeSaturatorDrive=23", &fall, &h2fall);
+    std::printf("amplitude saturator 23 over the EG's decay: level falls %.1f dB, h2 against h1 %.1f dB\n", fall, h2fall);
+    CHECK(fall > 10 && std::fabs(h2fall - fall) < 1.0);  // h2 goes as the level squared over a window the level moves in
+    decaying("Filter1FilterSaturatorDrive=23", &fall, &h2fall);
+    std::printf("filter saturator 23 over the EG's decay: level falls %.1f dB, h2 against h1 %.1f dB\n", fall, h2fall);
+    CHECK(fall > 10 && std::fabs(h2fall) < 0.2);
+    Gap g[64]; Patch q = plain();
+    q.set(Filter1FilterSaturatorDrive, 23); q.set(Filter2FilterSaturatorDrive, 15); q.set(AmplitudeSaturatorDrive, 8);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == Filter1FilterSaturatorDrive);  // filter 2 a filter: filter 1's runs after it
+    q = Patch();  // the model's default: filter 2 a high-pass at 0 (under 5.2 Hz, its gain only)
+    q.set(Filter1FilterSaturatorDrive, 23); q.set(Filter2FilterSaturatorDrive, 15); q.set(AmplitudeSaturatorDrive, 8);
+    CHECK(notCovered(q, g, 64) == 0);
+    q.set(Filter1FilterSaturatorDrive, 24);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == Filter1FilterSaturatorDrive);
+}
+
 static void testStatistics() {
     const auto x = renderProbeA(2, 1, 128);
     const size_t half = x.size() / 2, win = 4800;
@@ -818,7 +858,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testPressureSource(); testWaveBox(); testWaves(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

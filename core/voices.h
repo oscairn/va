@@ -123,7 +123,11 @@ struct Sound {
     float lfoCut = 0;        // filter LFO: semitones of cutoff at LFO value 1
     float lfoCutPerStep = 0; // the same a step of its depth (a box moves the depth)
     float lfoAmp = 0;        // amplitude LFO: log2 gain = lfoAmp x value - |lfoAmp| (the top is the level; the sign inverts)
-    float level = 0;        // linear: amplitude level law, filter out level, calibration
+    float level = 0;        // linear: amplitude level law, filter out level, calibration (and the saturators' gain)
+    // The saturators (laws.cpp): after the filters, y = x + (satC + satCa e) x^2 per sample (x the filters' output in the engine's units,
+    // e the amplitude EG: the amplitude saturator acts after it), their gain in `level`; sat: any saturator acts.
+    bool sat = false;
+    float satC = 0, satCa = 0;
     float gain = 1, panL = 0.70710678f, panR = 0.70710678f;  // the caller's level and pan
 };
 // The destinations' raw values with the boxes at the given source values (src: 0..1023 per source; knob: 0..1).
@@ -140,7 +144,7 @@ enum Field {
     GL, DGL, GR, DGR,
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
-    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC,
     NFIELDS
 };
 constexpr int kStageAttack = 0, kStageDecay = 1, kStageRelease = 2;

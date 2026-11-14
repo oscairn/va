@@ -139,6 +139,18 @@ double portaRate(int t) {  // semitones a second
 }
 
 
+// The saturators (va-round7 X1: a 65.4 Hz sine through LPF24 at 1023; h1 against drive 0, h2 against h1 with its sign): at the drives
+// measured, y = g (x + a2 x^2), x the filters' output over a single sine's at oscillator level 511 (1.1663 in the engine's units); g and
+// a2 hold from oscillator level 90 to 511 (within 0.1 dB and 5 %), h3 stays under -64 dB to drive 23. Filter 1's and filter 2's are one
+// law (S2_* within 0.03 dB and 0.0004); a filter's acts only where the filter does (thru: none). Between the measured drives g is not
+// monotonic (16: +1.30 dB, 23: +0.73), so only those are taken (coverage).
+constexpr int kSatDrive[] = {0, 2, 4, 7, 8, 12, 15, 16, 23};
+constexpr float kSatFiltDb[] = {0, 0.166f, 0.537f, 1.070f, 1.165f, 1.131f, 1.072f, 1.298f, 0.727f};
+constexpr float kSatFiltA2[] = {0, 0.00188f, 0.00224f, 0.00291f, 0.00318f, 0.00448f, 0.00581f, 0.00633f, 0.01159f};
+constexpr float kSatAmpDb[] = {0, 0.148f, 0.363f, 0.579f, 0.609f, 0.768f, 0.859f, 0.878f, 1.716f};
+constexpr float kSatAmpA2[] = {0, 0.00124f, 0.00148f, 0.00191f, 0.00209f, 0.00295f, 0.00383f, 0.00417f, 0.00763f};
+constexpr double kSatUnit = 1.1663;  // the engine's single sine at oscillator level 511, filter open
+
 // ---- the filters ------------------------------------------------------------------------------------------------------------
 // va-round5 F1: every type is a cascade of the reference's sections (core.cpp filterRun, filterControl), read within 0.001 dB on a
 // 32.7 Hz saw's harmonics against thru. The cutoff law gives the reference's fc (Hz) at each raw value (F3: LPF12 every 8 raw
@@ -154,6 +166,7 @@ double filterFc(int c) {  // log-frequency between the knots
     return std::exp((1 - u) * std::log(double(kFcY[i - 1])) + u * std::log(double(kFcY[i])));
 }
 }  // namespace
+int satIndex(int drive) { for (int i = 0; i < 9; ++i) if (kSatDrive[i] == drive) return i; return -1; }
 double cutoffHz(int raw) { return filterFc(std::max(0, std::min(1023, raw))); }
 namespace {
 void velocityLaws(Sound& s, int f, int cut, int feg, int res) {
@@ -484,7 +497,20 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         const int k = q[Filter2FilterType] - 5;
         db += at(Law{kHpTabX[k], kHpTabY[k], kHpTabN[k], 0, 0}, float(12 * std::log2(filterFc(q[Filter2FilterCutoff]))));
     }
-    s.level = float(std::pow(10.0, db / 20));
+    // the saturators in series (filter 1, filter 2, then the amplitude's after the amplitude EG: va-round7 S2, its h2 falls with the EG's
+    // level, the filters' does not), each on the one before's output: their gains multiply, their x^2 terms add (a later one's scaled by
+    // the gains before it, the amplitude's also by the EG at the control step; the x^3 and x^4 cross terms, under -75 dB to drive 23,
+    // are dropped)
+    double g = 1, c = 0;
+    for (int f = 0; f < 2; ++f) {
+        const int i = q[f ? Filter2FilterType : Filter1FilterType] ? satIndex(q[f ? Filter2FilterSaturatorDrive : Filter1FilterSaturatorDrive]) : 0;
+        if (i > 0) { c += kSatFiltA2[i] * g; g *= std::pow(10.0, kSatFiltDb[i] / 20); }
+    }
+    const int ia = satIndex(q[AmplitudeSaturatorDrive]);
+    const double ca = ia > 0 ? kSatAmpA2[ia] * g : 0;
+    if (ia > 0) g *= std::pow(10.0, kSatAmpDb[ia] / 20);
+    s.sat = c != 0 || ca != 0; s.satC = float(c / kSatUnit); s.satCa = float(ca / kSatUnit);
+    s.level = float(std::pow(10.0, db / 20) * g);
 }
 
 }  // namespace vcore

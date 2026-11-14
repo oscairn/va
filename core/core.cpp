@@ -372,10 +372,17 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     if (s.plan.lfo[2]) g = g * exp2v(lamp);
     l.ramp(GL, DGL, g * splat(s.panL), vm{}, rn);
     l.ramp(GR, DGR, g * splat(s.panR), vm{}, rn);
+    if (s.sat) l.set(SATC, fma(splat(s.satCa), l(AENV), splat(s.satC)) * fg);  // the x^2 term on the buffer (the filters' gain and the EG come later)
     l.set(FRESH, splat(0.f));
 }
 template <bool LP, bool HP, bool O3>
 VC_NOINLINE void control(const Lane& l, const Sound& s, const Ctl& c) { controlBody<LP, HP, O3, false>(l, s, c); }
+
+// The saturators after the filters (laws.cpp applyLaws): y = x + c x^2 per sample, c per voice.
+VC_NOINLINE void saturate(const Lane& l, int n, vf* buf) {
+    const vf c = l(SATC);
+    for (int k = 0; k < n; ++k) buf[k] = fma(c * buf[k], buf[k], buf[k]);
+}
 
 VC_INLINE void amp(const Lane& l, const vf* buf, int n, vf* accL, vf* accR) {
     vf gl = l(GL), dgl = l(DGL), gr = l(GR), dgr = l(DGR);
@@ -418,6 +425,7 @@ struct Plan {
         }
         if constexpr (LP) { if constexpr (kHot) filterHot<N, 1>(s.flt[0].type, l, L1, c.n, buf); else filterStage<N>(s.flt[0].type, l, L1, c.n, buf); }
         if constexpr (HP) { if constexpr (kHot) filterHot<N, 5>(s.flt[1].type, l, H1, c.n, buf); else filterStage<N>(s.flt[1].type, l, H1, c.n, buf); }
+        if (s.sat) for (int m = 0; m < N; ++m) saturate(l[m], c.n, buf[m]);
         for (int m = 0; m < N; ++m) amp(l[m], buf[m], c.n, aL, aR);
     }
     static void run(Pool& p, const Sound& s, const Ctl& c, vf* aL, vf* aR, int interleave) {
@@ -826,7 +834,8 @@ namespace vcore {
 // lanes of 4; a partly filled lane costs as a full one. A table read (a saw, or a pulse of width 0.5)
 // is measured; any other pulse width is two reads, counted as such (not measured).
 Cost estimateCost(const PlanDesc& d) {
-    constexpr double kBase = 3010, kRead = 1670, kOsc3 = 2225, kTwoSections = 2810, kOneSection = 2175, kLfo = 130, kOscLfo = 416, kBox = 47, kRest = 216;
+    constexpr double kBase = 3010, kRead = 1670, kOsc3 = 2225, kTwoSections = 2810, kOneSection = 2175, kLfo = 130, kOscLfo = 416, kBox = 47, kRest = 216,
+                     kSat = 228;  // the saturators' stage (round 7 plan 15 against plan 10: 1.8k a block at 8 voices)
     double v = kBase + kBox * d.boxes;  // the boxes run once per sound a step: their share at 8 voices
     for (int n = 0; n < 2; ++n) v += d.osc[n] == Wave::Saw ? kRead : d.osc[n] == Wave::Pulse ? 2 * kRead : 0;
     if (d.osc[2] != Wave::Off) v += kOsc3;  // its read, pitch and drift (plan 10: 2.2k a voice)
@@ -836,6 +845,7 @@ Cost estimateCost(const PlanDesc& d) {
     // control step is one call a lane (round 5: shared by the lane variants, for code size)
     for (int f = 0; f < 2; ++f) if (d.filter[f]) v += d.filter[f] == 1 || d.filter[f] == 5 ? kTwoSections : kOneSection;
     for (bool l : d.lfo) v += l ? kLfo : 0;
+    if (d.sat) v += kSat;
     return {v, kRest};  // rest: the whole core with no voice sounding (a sound adds nothing at rest)
 }
 }  // namespace vcore

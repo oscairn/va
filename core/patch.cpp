@@ -11,6 +11,7 @@
 
 namespace vcore {
 double cutoffHz(int raw);  // laws.cpp: the cutoff law
+int satIndex(int drive);   // laws.cpp: a measured saturator drive's index (-1: not measured)
 
 const ParamDef kParamDefs[kParamCount] = {
 #define X(id, name, lo, hi, def) {#id, name, lo, hi, def},
@@ -281,7 +282,9 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
             g.add(PartFilterCutoffFrequency, "the part's cutoff offset on filter 2: not measured");
         if (r.lo[dd] < -160) g.add(flt(f, Filter1FilterCutoffEGDepth), "EG depth (with its boxes) under 96: law measured 96-448 (it stops at 448)");
         if (f == 1) g.need(q, Filter2FilterCutoffLFODepth, 256, 256, "filter 2 LFO depth: not measured");
-        g.need(q, flt(f, Filter1FilterSaturatorDrive), 0, 0, "saturator: not built");
+        if (satIndex(q[flt(f, Filter1FilterSaturatorDrive)]) < 0) g.add(flt(f, Filter1FilterSaturatorDrive), "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
+        else if (!f && q[Filter1FilterSaturatorDrive] && q[Filter2FilterType] && !highPassAsGain(q))
+            g.add(Filter1FilterSaturatorDrive, "filter 1's saturator with filter 2 a filter: the saturators run after both filters, so not built");
         g.need(q, flt(f, Filter1FilterOutLevel), 64, 64, "filter out level: no measured law");
         g.need(q, flt(f, Filter1FilterSaturatorDriveVelocitySensitivity), 256, 256, "saturator velocity sensitivity: not built");
         g.need(q, flt(f, Filter1FilterResonanceVelocitySensitivity), 256, 256, "resonance velocity sensitivity: measured at velocities 1 and 127 only");
@@ -319,7 +322,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         g.need(q, AmplitudeLFOFadeInTime, 0, 0, "amplitude LFO fade-in: not measured");
     }
     g.need(q, AmplitudeLevelKeyFollow, 0, 0, "amplitude key follow: no measured law");
-    g.need(q, AmplitudeSaturatorDrive, 0, 0, "saturator: not built");
+    if (satIndex(q[AmplitudeSaturatorDrive]) < 0) g.add(AmplitudeSaturatorDrive, "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
     if (r.lo[DAmpDecay] < 100) g.add(AmplitudeEGDecayTime, "decay (with its boxes): law measured 100-255");
     if (r.lo[DAmpRelease] < 64) g.add(AmplitudeEGReleaseTime, "release (with its boxes): law measured 64-255");
     g.need(q, AmplitudeEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
@@ -391,6 +394,7 @@ PlanDesc describe(const Patch& q) {
     d.lfo[1] = d.filter[0] && (q[Filter1FilterCutoffLFODepth] != 256 || boxOn(kDestLfoCutDepth, -1));
     for (int b = 0; b < 16; ++b) d.boxes += q[box(b, Box1ControllerSetSwitch)] ? 1 : 0;
     d.lfo[2] = q[AmplitudeLevelLFODepth] != 128;
+    d.sat = q[AmplitudeSaturatorDrive] || (q[Filter1FilterType] && q[Filter1FilterSaturatorDrive]) || (q[Filter2FilterType] && q[Filter2FilterSaturatorDrive]);
     auto add = [&](Stage s) { d.stage[d.count++] = s; };
     if (d.osc[0] != Wave::Off) add(d.osc[0] == Wave::Saw ? Stage::Saw1 : Stage::Pulse1);
     if (d.osc[1] != Wave::Off) add(d.osc[1] == Wave::Saw ? Stage::Saw2 : Stage::Pulse2);

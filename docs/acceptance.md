@@ -235,3 +235,19 @@ constant fitted on the first 15-70 % of the segment from its peak. The engine (v
 | 120 / 126 / 133 / 138 | 32.9, 35.0 / 46.2, 46.0 / 59.3, 59.4 / 73.5, 73.7 ms | 34.1 / 46.2 / 59.0 / 73.4 ms | 3 % | pass |
 | 144 / 160 (the round 3 law) | 98.1, 97.5 / 195.7, 195.6 ms | 93.3 / 194.8 ms | 7 % (round 3's 144: 0.101 against 0.094 s) | pass |
 | the filter EG's release 64 / 70 / 80 / 100 / 128 (not built under 128) | 4.2, 4.6 / 5.1 / 6.5, 7.0 / 14.4, 14.5 / 49.1, 49.0 ms; under 64 not resolved by 2.5 ms frames | 128: 48.2 ms; under 128 the engine holds 128's | | not built under 128 (reported) |
+# Acceptance: the saturators against the reference (round 7)
+
+Probes measurement run va-round7 (2026-11-14) batch X1: a sine at key 36 (65.4 Hz, oscillator level 511 unless named) through LPF24 at 1023,
+resonance 0, filter 2 off (or a high-pass at 0 for its own saturator); the fundamental's level against drive 0 and the 2nd harmonic against
+the fundamental. The engine renders the same patches (tests/core `testSaturators`).
+
+| quantity | reference | engine | tolerance | result |
+|---|---|---|---|---|
+| filter 1 drive 7 / 15 / 23: h1 against drive 0, h2 against h1 | +1.070 / +1.072 / +0.727 dB; -56.7 / -50.8 / -44.7 dB | +1.070 / +1.072 / +0.727 dB; -56.7 / -50.7 / -44.7 dB | 0.1 dB; 1 dB | pass |
+| filter 2 (a high-pass at 0) drive 15 | +0.41 dB against filter 1 alone at drive 0 (its pass-band -0.66 dB); h2 -51.0 dB | +0.42 dB; -50.7 dB | 0.1 dB; 1 dB | pass |
+| amplitude drive 8 | +0.609 dB; -59.7 dB | +0.609 dB; -59.6 dB | 0.1 dB; 1 dB | pass |
+| the law at oscillator levels 90 / 160 / 255 / 380 (drives 8 and 23, filter and amplitude) | g within 0.12 dB of level 511's, a2 within 13 % (the level law's own values for the input) | one g and a2 a drive | 0.2 dB; 15 % | pass |
+| a saw, filter open, drive 23 | h1 +0.73 dB (against drive 0), harmonics 2-12 against h1 unchanged within 0.1 dB | h1 +0.727 dB, harmonics 2-12 against h1 unchanged within 0.01 dB (vcbench render) | 0.1 dB | pass |
+| three sines in phase (amplitude 3), filter drives 7 / 8 / 15 / 23, amplitude 8 / 23 (va-round7 S2) | g +1.075 / +1.167 / +1.051 / +0.659 dB, +0.595 / +1.590 dB; a2 0.00290 / 0.00316 / 0.00579 / 0.01148, 0.00209 / 0.00748; h3 -68 to -64 dB, at 23 -52 (filter) and -46 dB (amplitude) | the single-amplitude g and a2 (the law has no x^3) | 0.15 dB; 2 % | pass (h3 at 23 a known difference) |
+| the amplitude saturator over the amplitude EG's decay (drive 23) and at amplitude levels 300 / 431 | h2 against h1 falls 18.4 dB as the level falls 18.0 dB (0.3-2.5 s); -48.35 dB at both levels as at 511 | after the EG (tests/core: within 1 dB of the level's fall), before the level | 1 dB | pass |
+| residual odd harmonics at drives 2-16 | h5, h7, h9 at -62 to -73 dB against h1 (none at drive 0) | none | | known difference |
