@@ -5,7 +5,7 @@
 #   docker run --rm -v "$PWD":/src:ro -v /tmp/cg:/out IMAGE sh /src/tools/cost/cg.sh /src /out [check]
 # Builds tools/vcbench.cpp at -O3 -mcpu=cortex-a53, runs every case with one callgrind dump per
 # measured 128-frame block, and prints instructions per block (mean, max). With "check" it fails
-# (exit 1) when a case's mean is more than 10 % over tools/cost/baseline.txt.
+# (exit 1) when a case's mean is more than 10 % over tools/cost/baseline.txt, or the shell's hosted gate fails.
 set -e
 SRC=$1; OUT=$2; MODE=$3
 F="-std=c++17 -O3 -DNDEBUG -mcpu=cortex-a53"
@@ -50,5 +50,11 @@ if [ "$MODE" = check ]; then
       echo "REGRESSION $name: $got instructions a block, baseline $base (+10 % allowed)"; fail=1
     else echo "ok $name: $got (baseline $base)"; fi
   done < "$SRC/tools/cost/baseline.txt"
+  # the shell's gate (docs/cost.md): hosted at rest at most 1,000 a block; hosted at 8 voices at most 3 % over the core alone
+  hr=$(awk '$1=="hosted-rest" {print $5}' "$OUT/summary.txt"); h8=$(awk '$1=="hosted-held8" {print $5}' "$OUT/summary.txt")
+  c8=$(awk '$1=="held8" {print $5}' "$OUT/summary.txt")
+  if [ "$(awk -v r="$hr" -v h="$h8" -v c="$c8" 'BEGIN {print (r > 1000 || h > c * 1.03)}')" = 1 ]; then
+    echo "SHELL GATE: hosted rest $hr (at most 1000), hosted 8 voices $h8 against the core's $c8 (at most +3 %)"; fail=1
+  else echo "ok shell: hosted rest $hr, hosted 8 voices $h8 (core $c8)"; fi
   exit $fail
 fi

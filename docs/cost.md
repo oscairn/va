@@ -15,7 +15,29 @@ The gate: at most 15k instructions a voice at 8 voices, at most 4k at rest. **Re
 container (`docker run --rm -v "$PWD":/src:ro -v /tmp/cg:/out IMAGE sh /src/tools/cost/cg.sh /src /out check`),
 not a CTest test. Shown failing with a baseline lowered to 50000 for 8 voices (exit 1, "REGRESSION held8").
 
+## Hosted cost (the plugin through CLAP)
+
+`tools/hostbench.cpp` drives the built plugin as the host does: a sound-context snapshot of probe A loaded, 128-frame blocks at
+48 kHz, `active_voices` and `notes` after every block; `cg.sh` measures it as the `hosted-*` cases (per block: `process`,
+`active_voices` and `notes`). **Gate** (in `cg.sh check`): hosted at rest at most 1,000 instructions a block; hosted at 8 voices
+at most 3 % over the core alone (`held8`). Shown failing with the shell of commit bf4a13f (hosted rest 2,611: "SHELL GATE").
+
+| case | round 6, before | round 6 |
+|---|---|---|
+| **hosted rest cost** | 2,615 (core 217) | **780** (core 213) |
+| **hosted cost at 8 voices** | 100,616 (core 96,879: +3.9 %) | **96,987** (core 94,633: +2.5 %) |
+| hosted pattern | 62,916 (core 59,793) | 60,193 (core 58,683) |
+
+What was trimmed: the shell's loops over the 64-voice pool every block (rendering, the helper's choke countdown, the per-block
+limit count, the voice description, `notes`) visit only the active voices (a 64-bit mask kept at start and finish), so the
+core's `voice()` is asked only for those; the core lists the sounds with voices once a render call instead of testing all 8 at
+every control step, reaps only a sound with a voice releasing or fading, and advances the ages once a call.
+
 ## Instructions per block (aarch64, NEON, two lanes interleaved)
+
+**Round 6** (the trims above): rest 213, 1 held 49,401, 4 held 49,425, 8 held 94,633 (**11.8k a voice**), 16 held 178,946, 8
+held one lane at a time 88,569, the pattern 58,683 (max 96,735); shedding 8 / 16: 100,097 / 185,561 then 30,993 / 58,575, then
+rest. The regression baseline is reset to these figures.
 
 **Round 5, code size.** The device's time per block is mostly not instructions (cache misses on the tables and the code when
 other plugins run between blocks), so the kernels were made smaller: each plan's control step is one call a lane (shared by its

@@ -46,6 +46,16 @@ bool validValue(Param p, double x) { return std::isfinite(x) && x >= kParams[p].
 
 struct Voice : oscairn::contexts::VoiceBase {};
 
+// The lowest set bit's index (m != 0).
+inline uint32_t lowBit(uint64_t m) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    unsigned long i; _BitScanForward64(&i, m); return uint32_t(i);
+#else
+    return uint32_t(__builtin_ctzll(m));
+#endif
+}
+static_assert(kVoices <= 64, "the active voices are one 64-bit mask");
+
 struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoices> {
     using Base = oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoices>;
     static constexpr const char* stateVersion = kSnapshotHeader;
@@ -63,6 +73,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     std::array<Owed, kVoices> owed{};     // notes a snapshot load ended; NOTE_END at the next block's start
     uint32_t owedCount = 0;
     uint32_t shownSlot = 0;               // the sound whose values `values` holds
+    uint64_t live = 0;                    // audio thread: the active voices (start sets, voiceFinished clears); per-block loops visit only these
     double sampleRate = 48000;
     uint32_t maxBlock = 0;
 
@@ -90,12 +101,13 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     uint32_t index(const Voice& v) const { return uint32_t(&v - voices.data()); }
     void start(Voice& v, Context& c) {
         const uint32_t i = index(v);
+        live |= uint64_t(1) << i;
         makeRoom(c, i);
         core->noteOn(i, uint32_t(&c - contexts.data()), v.channel, v.key, v.velocity);
     }
     void release(Voice& v) { core->noteOff(index(v)); }
     // Every way a note's voice ends (released out, choked, stolen, reset): free the core's slot.
-    void voiceFinished(Voice& v) { core->kill(index(v)); choking[index(v)] = false; }
+    void voiceFinished(Voice& v) { core->kill(index(v)); choking[index(v)] = false; live &= ~(uint64_t(1) << index(v)); }
     double loudness(const Voice& v) const { return core->voice(index(v)).level; }
     void applyExpression(const clap_event_note_expression_t& e) {
         Base::applyExpression(e);
@@ -182,7 +194,8 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     };
     // Every voice but `except`, as the order sees it. Held: its key is down (a pedal does not count).
     void describe(Described& d, uint32_t except) const {
-        for (uint32_t i = 0; i < kVoices; ++i) {
+        for (uint64_t m = live; m; m &= m - 1) {
+            const uint32_t i = lowBit(m);
             const auto& v = voices[i];
             d.present[i] = v.active && i != except;
             if (!d.present[i]) continue;
@@ -213,7 +226,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     bool withinLimits() const {
         std::array<uint32_t, kContexts> n{};
         uint32_t all = 0;
-        for (const auto& v : voices) if (v.active && !v.chokeLength) ++n[v.context], ++all;
+        for (uint64_t m = live; m; m &= m - 1) { const auto& v = voices[lowBit(m)]; if (v.active && !v.chokeLength) ++n[v.context], ++all; }
         const uint32_t cap = instanceLimit();
         if (cap && all > cap) return false;
         for (uint32_t slot = 0; slot < kContexts; ++slot)
@@ -245,8 +258,8 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
 
     // ---- rendering ----------------------------------------------------------------------
     void render(const clap_process_t* pr, uint32_t from, uint32_t to) {
-        for (uint32_t i = 0; i < kVoices; ++i)  // a choke (NOTE_CHOKE or the helper's own) fades in the core too
-            if (voices[i].active && voices[i].chokeLength && !choking[i]) {
+        for (uint64_t m = live; m; m &= m - 1)  // a choke (NOTE_CHOKE or the helper's own) fades in the core too
+            if (const uint32_t i = lowBit(m); voices[i].active && voices[i].chokeLength && !choking[i]) {
                 core->choke(i, std::max<uint32_t>(1, voices[i].chokeLeft));
                 choking[i] = true;
             }
@@ -255,12 +268,31 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         std::memset(out[0] + from, 0, (to - from) * sizeof(float));
         std::memset(out[1] + from, 0, (to - from) * sizeof(float));
         core->render(out[0] + from, out[1] + from, to - from);
-        for (uint32_t i = 0; i < kVoices; ++i)  // a voice the core finished: its note ends here
-            if (voices[i].active && !core->voice(i).sounding) {
+        for (uint64_t m = live; m; m &= m - 1)  // a voice the core finished: its note ends here
+            if (const uint32_t i = lowBit(m); voices[i].active && !core->voice(i).sounding) {
                 const auto at = eventTime; eventTime = to ? to - 1 : 0;
                 finishVoice(voices[i]);
                 eventTime = at;
             }
+    }
+    // The helper's renderSegment and notes, over the active voices only (the same work; theirs visit all 64 every block).
+    void renderSegment(const clap_process_t* pr, uint32_t from, uint32_t to) {
+        render(pr, from, to);
+        const uint32_t frames = to - from;
+        for (uint64_t m = live; m; m &= m - 1) {
+            auto& v = voices[lowBit(m)];
+            if (!v.active || !v.chokeLength) continue;
+            v.chokeLeft = v.chokeLeft > frames ? v.chokeLeft - frames : 0;
+            if (!v.chokeLeft) { const auto at = eventTime; eventTime = to ? to - 1 : 0; finishVoice(v); eventTime = at; }
+        }
+    }
+    static uint32_t voiceNotes(const clap_plugin_t* p, oscairn_voice_budget_note_t* notes, uint32_t capacity) {
+        auto& s = self(p); oscairn::voices::Report<kVoices> report;
+        for (uint64_t m = s.live; m; m &= m - 1) {
+            const auto& v = s.voices[lowBit(m)];
+            if (v.active) report.add(v.noteId, 0, v.channel, v.key, s.loudness(v));
+        }
+        return report.write(notes, capacity);
     }
 
     // ---- parameters ---------------------------------------------------------------------

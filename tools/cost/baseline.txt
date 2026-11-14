@@ -1,10 +1,13 @@
 # Instructions per 128-frame block (mean over the measured blocks), probe A at 48 kHz, from
 # tools/cost/cg.sh on aarch64 Linux (g++ 13.3 -O3 -mcpu=cortex-a53, NEON, two lanes interleaved).
 # `cg.sh SRC OUT check` fails when a case is more than 10 % over its line here.
-rest 217
-held1 50647
-held4 51079
-held8 96831
-held16 182232
-held8-L1 90767
-pattern 59745
+rest 213
+held1 49401
+held4 49425
+held8 94633
+held16 178946
+held8-L1 88569
+pattern 58683
+hosted-rest 780
+hosted-held8 96987
+hosted-pattern 60193
