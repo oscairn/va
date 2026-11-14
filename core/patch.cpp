@@ -305,14 +305,14 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         g.need(q, PitchLFODelayTime, 0, 96, "pitch LFO delay over 96: not measured (law extrapolated past 5.3 s)");
         if (q[PitchLFOFadeInTime] && q[PitchLFOFadeInTime] < 96) g.add(PitchLFOFadeInTime, "pitch LFO fade-in under 96: shorter than 76 ms, not resolved");
     }
-    if (d.lfo[1]) {  // depth verified 8-40 steps with a sine at speed 100 (va-round3 lfoF: the swing within 1.4 % of the reference's)
-        g.need(q, Filter1FilterCutoffLFODepth, 256 - 40, 256 + 40, "filter LFO depth: verified up to 40 steps from 256");
+    if (d.lfo[1]) {  // depth verified 8-128 steps either way (va-round8 F, round 7 A3: within 0.83 % of the law)
+        g.need(q, Filter1FilterCutoffLFODepth, 256 - 128, 256 + 128, "filter LFO depth: verified up to 128 steps from 256");
         g.need(q, FilterCutoffLFOSpeed, 0, 320, "filter LFO speed over 320: audio rate, not built");
         g.need(q, FilterCutoffLFOWave, 3, 3, "filter LFO wave: only the sine verified on the filter LFO");
         g.need(q, FilterCutoffLFODelayTime, 0, 0, "filter LFO delay: not measured on the filter LFO");
         g.need(q, FilterCutoffLFOFadeInTime, 0, 0, "filter LFO fade-in: not measured on the filter LFO");
-        if (r.moved[DLfoCutDepth] && (r.lo[DLfoCutDepth] < 216 || r.hi[DLfoCutDepth] > 296))
-            g.add(Filter1FilterCutoffLFODepth, "filter LFO depth (with its boxes): verified up to 40 steps from 256");
+        if (r.moved[DLfoCutDepth] && (r.lo[DLfoCutDepth] < 128 || r.hi[DLfoCutDepth] > 384))
+            g.add(Filter1FilterCutoffLFODepth, "filter LFO depth (with its boxes): verified up to 128 steps from 256");
     }
     if (d.lfo[0] && r.moved[DLfoSpeed] && r.hi[DLfoSpeed] > 320) g.add(PitchLFOSpeed, "pitch LFO speed (with its boxes) over 320: audio rate, not built");
     if (d.lfo[2]) {

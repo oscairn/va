@@ -105,9 +105,15 @@ static void testCoverage() {
     p.set(Filter1FilterResonance, 32);
     CHECK(notCovered(p, g, 64) == 0);
     p = plain(); p.set(Filter1FilterCutoffLFODepth, 280); p.set(FilterCutoffLFOWave, 3);
-    CHECK(notCovered(p, g, 64) == 0 && describe(p).lfo[1]);  // the filter LFO: depth verified to 40 steps
-    p.set(Filter1FilterCutoffLFODepth, 300);
+    CHECK(notCovered(p, g, 64) == 0 && describe(p).lfo[1]);  // the filter LFO: depth verified to 128 steps (va-round8 F)
+    p.set(Filter1FilterCutoffLFODepth, 384);
+    CHECK(notCovered(p, g, 64) == 0);
+    p.set(Filter1FilterCutoffLFODepth, 400);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterCutoffLFODepth);
+    {  // the depth law: 25.17 cents a step at the LFO's peak (24 statics from -128 to +128 steps within 0.83 %; 26.6 read the swings 4-5 % large)
+        Sound s; auto c = std::make_unique<Core>(); c->prepare(48000); c->compile(s, p);
+        CHECK(std::fabs(s.lfoCut * 100 / 144 - 25.17) < 0.01);
+    }
     p = plain(); p.set(VoltageDrift, 127);
     CHECK(notCovered(p, g, 64) == 0);  // drift: measured to 127 (va-round8 D)
     // live sources: a mod wheel box on the cutoff reaches the whole box range (-24: 620 down to 236; the cutoff law is measured

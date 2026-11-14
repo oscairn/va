@@ -111,11 +111,13 @@ double lfoHz(int raw) {
 constexpr float kLfoDepthX[] = {0, 1, 2, 3, 4, 6, 8, 12, 15, 16, 20, 24, 25, 28, 30, 31, 32, 35, 36, 38, 40, 48, 50, 52, 53, 58, 61, 64, 80, 86, 92, 96, 100, 104, 108, 116, 120, 123, 124, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 247};
 constexpr float kLfoDepthY[] = {0, 0.59f, 0.58f, 1.17f, 1.76f, 2.93f, 4.10f, 5.86f, 7.62f, 7.62f, 9.96f, 14.07f, 14.65f, 17.58f, 21.09f, 21.09f, 21.68f, 24.61f, 27.54f, 32.23f, 37.49f, 57.42f, 62.11f, 67.38f, 69.73f, 82.62f, 92.58f, 97.26f, 137.11f, 150.00f, 184.57f, 205.08f, 225.00f, 244.92f, 264.85f, 304.69f, 324.61f, 345.12f, 345.12f, 365.04f, 404.88f, 444.73f, 484.57f, 525.00f, 564.84f, 624.61f, 825.00f, 1024.80f, 1224.61f, 1424.99f, 1624.80f, 1824.60f, 2024.99f, 2224.82f, 2400.00f};
 constexpr int kLfoDepthN = sizeof kLfoDepthX / sizeof kLfoDepthX[0];
-// Filter cutoff LFO depth: 26.6 cents of cutoff a step from 256 at the LFO's peak (saw through LPF24 at 636, 8-40 steps,
-// within 0.4 %; not verified on the engine: docs/coverage.md). Amplitude LFO depth: the gain in dB is -A (1 - value),
+// Filter cutoff LFO depth: 25.17 cents of cutoff a step from 256 at the LFO's peak (va-round8 F and round 7 A3: a saw at key 36 through
+// LPF24 at 500, a square LFO; each static's swing of harmonics 3-6 matched to the engine's at a fractional depth through the same
+// analysis: 24 depths from -128 to +128 steps (8-128 either way) within 0.83 %; the earlier 26.6, fitted through a filter model at
+// 8-40 steps, read the swings 4-5 % large). Amplitude LFO depth: the gain in dB is -A (1 - value),
 // the top at the level (within 0.01 dB), A by steps from 128 (dB, sine in dB within 0.01 dB; linear between knots); the
 // amplitude LFO runs a quarter cycle ahead of the pitch LFO (sine, reset on: at the top at the note-on, 80-87 degrees).
-constexpr double kLfoCutCentsPerStep = 26.6;
+constexpr double kLfoCutCentsPerStep = 25.17;
 constexpr float kLfoAmpX[] = {0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 80, 96, 104, 112, 120, 124, 127};
 constexpr float kLfoAmpY[] = {0, 0.188f, 0.378f, 0.753f, 1.13f, 1.693f, 2.45f, 3.198f, 3.951f, 6.02f, 8.466f, 12.04f, 14.487f, 18.062f, 24.271f, 30.479f, 48.164f};
 // Delay: 0.00563 d^1.5 s (8-96, within 0.5 %); the LFO runs from the note-on and the delay gates it. Fade-in: the level

@@ -315,3 +315,19 @@ of its 12-voice mean.
 | filter EG 100 / 128 (R, 4 voices) | 13.98 / 47.4 ms | the law: 14.74 / 48.2 | +5 / +2 % | pass |
 | filter EG under 55 | not resolved (the filter's own response hides the EG; notes scatter 2-80 ms) | the amplitude's law | | reported |
 | the voice-to-voice spread (sd 0.4-0.65 ms at ageing 100; 0.87 / 0.25 ms at ageing 0 / 200, release 55) | | one time a release | | known difference |
+
+# Acceptance: the filter LFO's depth law (round 8)
+
+Round 7's A3 statics and round 8's batch F (depths 264-296, 232, 192, 128): a saw at key 36 through LPF24 at 500, a square LFO at speed
+120 with key-on reset, the swing of harmonics 3-6 (90th less 10th percentile of 0.1 s frames). Each reference swing was matched to an
+engine sweep (26.6 cents a step) at a fractional depth, giving the cents a step the reference moves: 25.00-25.39 at every depth, the law
+25.17 (24 depths, within 0.83 %). The engine with it renders the same patches through the same analysis (`engFL.py`):
+
+| depths (steps from 256) | points | reference swings | engine | tolerance | result |
+|---|---|---|---|---|---|
+| +8 / +16 / +24 / +32 / +40 | 5 | 6.05 / 11.87 / 17.54 / 22.98 / 28.23 dB | -0.01 / +0.07 / +0.11 / +0.11 / +0.01 dB | 0.5 dB | pass |
+| +44 to +64 (300-306, 320) | 6 | 30.83-41.96 dB | -0.12 to +0.20 dB | 0.5 dB | pass |
+| +92 to +128 (348-354, 384) | 6 | 57.39-75.57 dB | -0.41 to +0.17 dB | 0.5 dB | pass |
+| -24 / -45 to -49 / -64 / -128 (232, 207-211, 192, 128) | 7 | 17.54-75.56 dB | -0.02 to +0.20 dB | 0.5 dB | pass |
+
+This replaces round 7's known difference (the swings 4-5 % large, +1.4 to +3.6 dB, with 26.6 cents a step).
