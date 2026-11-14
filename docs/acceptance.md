@@ -209,3 +209,10 @@ engine on a pulse of width 0.5, both pitch-tracked; `analysis/boxR1.py`, `analys
 | switch 1 at CC 65 | as CC 64 (2.3 cents under the law's 65) | the law (65) | | unexplained, one point |
 | round 5 (va-round5 C1): the wheel at 16-96 through a +32 box on cutoff 400 (LPF12) | the static cutoff of the 7-bit map 8 v / 512 + (v - 64) 512 / 63 within 1e-5 of F at 11 values (104-127: both maps agree) | the same map; wheel 64 and 96 against static 655 and 785: 0.0 relative difference (tests/core) | exact | pass |
 | round 5 C1: three +1 boxes from the wheel at 127 on cutoff 600 | the static 647 (645 truncated per box, 646 neither) | 647 | exact | pass |
+| round 6 (va-round6 A1): frequency box (123), knob 1 at 1023, ratios +8 / -32 | +450.00 / -1800.00 cents | +449.87 / -1800.04 cents (tests/core) | 1 cent | pass |
+| round 6 A1: pulse width box (125), +16 from 128 on a square | h2/h1 0.6965 (width 190.8 / 256) | 0.6872 (the width law 0.01 + 0.98 raw / 256 at 191: 0.004 of the period wide) | 0.01 | pass |
+| round 6 A1: pitch LFO speed box (401), +16 from 150 | 17.50 Hz (raw 253.4 by the speed law) | 17.34 Hz (253, truncated toward zero) | 2 % | pass |
+| round 6 A1: filter LFO depth box (144), +16 / +32 | between the static depths 256-320 / 320-384 (swings 32.9 / 59.2 dB against 0 / 42.0 / 75.6) | the static 304 / 352 (span 192) | the bracket | pass (bracketed only) |
+
+Round 6 changed no output of probe A: the bench's output hash for 8 held voices and for the pattern on aarch64 is the same at the
+round's first commit and at its last (449f7161bb45b815, af2fb0e65523d1ac), so the tables above were not re-recorded or re-run.
