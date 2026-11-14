@@ -785,7 +785,6 @@ static void testUnisonNotes() {
     CHECK(core->voiceCount() == 60);
     // mono with portamento: a legato note takes every copy over and glides them; its release goes back to the held key with all of them
     std::vector<float> L(48000), R(48000);
-    renderSine("Unison=1 UnisonDetune=15 PartMonoPolyMode=0 PortamentoMaster=1 PartPortamentoTime=8", 72, L, R, 1);
     readPatch("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Filter1FilterType=0 Filter2FilterType=0 Osc1OscillatorWave=4 "
               "Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 Unison=1 UnisonDetune=15 PartMonoPolyMode=0 PortamentoMaster=1 PartPortamentoTime=8", p, e, sizeof e);
     core = std::make_unique<Core>(); core->prepare(44100); core->load(0, p); core->setGain(0, 1, 0);
