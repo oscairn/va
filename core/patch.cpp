@@ -150,7 +150,6 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         }
         if (!nd) continue;  // reaches no unit that sounds
         const bool knob = src >= 8 && src <= 15;
-        if (src == 2) { g.add(box(b, Box1ControllerSetSource), "controller box source aftertouch: its value map not measured (the recorder cannot send channel pressure)"); continue; }
         if (src == 4 || src == 5) { g.add(box(b, Box1ControllerSetSource), "controller box source foot controller 2 / foot switch: their rest values measured (top / 0), their value map not"); continue; }
         if (src >= kSources) { g.add(box(b, Box1ControllerSetSource), "controller box source: not built (sequenced and envelope-following sources)"); continue; }
         const int curve = findCurve(q[box(b, Box1ControllerSetCurveBank)], q[box(b, Box1ControllerSetCurveType)],

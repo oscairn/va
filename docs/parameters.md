@@ -80,7 +80,7 @@ channel of its latest note; the core keeps them per channel):
 |---|---|---|
 | 0 pitch bend | pitch bend | the 14-bit value / 16 |
 | 1 mod wheel | CC 1 | 8 v up to v = 64, then 512 + (v - 64) x 512 / 63 (127: 1024) |
-| 2 aftertouch | channel pressure, or the pressure note expression (the channel's latest) | as a CC (its map is not measured: reported as not covered) |
+| 2 aftertouch | channel pressure, or the pressure note expression (the channel's latest) | as a CC (va-round7 A3P: channel pressure through a +32 cutoff box sounds as the wheel at 0, 16, 32, 48, 64, 96 and 127 within 0.000 dB on harmonics 1-8, and follows a change within a 50 ms frame) |
 | 3 foot controller 1 | CC 11 | as CC 1 |
 | 7 breath | CC 2 | as CC 1 |
 

@@ -111,14 +111,14 @@ static void testCoverage() {
     p = plain(); p.set(VoltageDrift, 65);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == VoltageDrift);
     // live sources: a mod wheel box on the cutoff reaches the whole box range (-24: 620 down to 236; the cutoff law is measured
-    // 0-1023); aftertouch's map is not measured; an unmeasured curve is reported
+    // 0-1023); aftertouch takes the 7-bit map (va-round7 A3P); an unmeasured curve is reported
     p = plain(); p.set(Box3ControllerSetSwitch, 1); p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetPolarity, 0); p.set(Box3ControllerSetRatio, 104);
     p.set(Filter2FilterControllerBox3Switch, 0); p.set(Filter1FilterResonance, 0);
     CHECK(notCovered(p, g, 64) == 0);
     p.set(Box3ControllerSetRatio, 136);  // +8: 620 to 747
     CHECK(notCovered(p, g, 64) == 0);
     p.set(Box3ControllerSetSource, 2);
-    CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetSource);
+    CHECK(notCovered(p, g, 64) == 0);
     p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetCurveType, 5);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetCurveType);
     p.set(Box3ControllerSetCurveType, 0); p.set(Box3ControllerSetDestination, 150);
@@ -753,6 +753,14 @@ static void testBoxDestinations() {
     CHECK(e > 0 && d < 1e-10 * e);
 }
 
+// Aftertouch as a box source (va-round7 A3P: channel pressure through a +32 cutoff box sounds as the mod wheel at 0, 16, 32, 48, 64, 96
+// and 127 within 0.000 dB on harmonics 1-8: the 7-bit map): covered.
+static void testPressureSource() {
+    Gap g[64]; Patch q;
+    q.set(Box1ControllerSetSwitch, 1); q.set(Box1ControllerSetSource, 2); q.set(Box1ControllerSetDestination, 142);
+    CHECK(notCovered(q, g, 64) == 0);
+}
+
 // The oscillators' wave (122; va-round7 A2: the mod wheel through a +-64 box at the 7-bit map's exact values): the wave moves by
 // the sum x 4 / 8192 rounded half away from zero (sum 960 -> none, 1024 -> one step up, -1024 -> one down, -3072 -> two down).
 // A box landing on a wave sounds as that wave set in the patch, bit for bit; coverage takes the box where no pulse is involved.
@@ -800,7 +808,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testWaveBox(); testWaves(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testPressureSource(); testWaveBox(); testWaves(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }
