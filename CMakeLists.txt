@@ -44,6 +44,9 @@ endif()
 # The bench, cost and render driver (tools/vcbench.cpp; tools/cost/cg.sh runs it under callgrind).
 add_executable(vcbench tools/vcbench.cpp)
 target_link_libraries(vcbench PRIVATE vcore)
+# The hosted cost driver (tools/hostbench.cpp): the built .clap through the CLAP ABI, as the host drives it.
+add_executable(hostbench tools/hostbench.cpp)
+target_link_libraries(hostbench PRIVATE clap_headers ${CMAKE_DL_LIBS})
 
 # The tests see only the built .clap, through the CLAP ABI (dlopen); they link no plugin code.
 add_executable(va_tests tests/test_main.cpp tests/alloc_guard.cpp tests/test_notes.cpp tests/test_budget.cpp
