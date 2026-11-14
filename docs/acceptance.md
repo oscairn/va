@@ -274,3 +274,24 @@ Whole-note behaviour (tests/core `testUnisonNotes`, the voice budget's `unison_n
 2 or 4 voices start, release, end, fade and are freed on the same control step (4,000 random notes, releases, chokes, kills and steals
 on sounds of 2 and 4: the voice count is always a whole number of notes); a note stolen in its slot takes its copies with it; a full
 pool cuts a note already fading for a new one, and a note with no room does not sound (its slot reports so and the shell ends it).
+
+# Acceptance: voltage drift over 64 (round 8)
+
+Probes measurement run va-round8 (2026-11-14) batch D: four sines held 30 s (keys 60 64 67 72, three takes: 12 voices) and 16 short
+notes at key 72 at each drift, the pitch tracked as round 7's G2; 16 saw notes at key 36 through LPF24 at 600, each note's cutoff fitted
+on harmonics 1-14 against the saw thru with the filter's own section response (residual under 0.02 dB). The engine renders the same
+patches and events (`vcbench render`, seeds 1-3 for the takes, 4 for the notes) through the same analysis (`anD.py`).
+
+| quantity | drift | reference | engine | result |
+|---|---|---|---|---|
+| the voices' mean offset (12 voices, standard error) | 80 / 100 / 127 | +1.80 (0.72) / +2.63 (1.54) / +16.75 (2.48) cents | +1.17 (0.92) / +1.80 (1.86) / +14.37 (2.91) | within one standard error of the difference |
+| the voices' means' sd | 80 / 100 / 127 | 2.49 / 5.34 / 8.57 cents | 3.18 / 6.44 / 10.08 | within 12 voices' scatter (ratio 1.2-1.3) |
+| the movement within a voice (sd) | 80 / 100 / 127 | 2.76 / 4.64 / 11.53 cents | 2.74 / 4.69 / 11.06 | within 4 % |
+| note starts (16), mean and sd | 80 / 100 / 127 | +1.51, 3.32 / +2.77, 5.61 / +17.26, 14.20 cents | +1.41, 4.34 / +2.08, 8.57 / +16.33, 15.66 | means within a standard error; the sd at 100 1.5 times the reference's (16 notes) |
+| each note's cutoff (16 notes), sd | 64 / 80 / 100 / 127 | 0.30 / 0.77 / 1.67 / 3.99 semitones | 0.34 / 0.88 / 1.90 / 4.53 (the same 16 uniform draws scaled; their sample sd 1.14 times the law's) | within 16 notes' scatter |
+| each note's cutoff, mean | 64 / 80 / 100 / 127 | +0.01 / +0.31 / +0.34 / +0.16 semitones (standard errors 0.07-1.0) | 0 (the law) | within two standard errors |
+| ageing 200 against 100 at drift 100 | 100 | no difference beyond the scatter (`docs/coverage.md`) | ignored | pass |
+
+The cutoff's spread at drift 64 changed from +-0.07 to +-0.51 semitone (uniform; sd 0.30), so probe A's renders (drift 64) changed: its
+stored cross-build statistics were taken again; the probe A acceptance rows above were not re-run with it (the cutoff's mean is
+unchanged, each note's cutoff now scatters by sd 0.3 semitone).

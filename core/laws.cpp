@@ -46,12 +46,18 @@ constexpr double kPartFegStepsPerUnit = 3;  // 1.5 semitones a unit (round 5, th
 constexpr int kPartCutoffPerUnit = 16;
 // Voltage drift (sines held 8 and 30 s, 4 voices a take; 16 short notes; noise through LPF24 at 636):
 // pitch = mean + static (uniform, sd as given) + amplitude x r(t), r linear between uniform knots in [-1, 1]
-// every 2.85 s (knot spacing fitted on drift 127: 2.8-2.9 s). Cents, at drift 0 / 32 / 64; linear between.
+// every 2.85 s (knot spacing fitted on drift 127: 2.8-2.9 s). Cents, at drift 0 / 32 / 64 / 80 / 100 / 127; linear between.
 // 64: mean +0.85 (12 voices over 30 s +0.75, 16 note starts +1.03), static sd 1.0, amplitude 3.6 (within-voice
-// sd 1.8 less the tracker's 0.6). The cutoff: no measurable mean at 64 (597.3/597.5 Hz at 0, 592.8/597.3 at 64).
-// Drift over 64 is not covered (at 127 the means reach +11 cents and +4.4 semitones of cutoff, 3 voices).
-constexpr float kDriftX[] = {0, 32, 64}, kDriftMean[] = {0, 0.96f, 0.85f}, kDriftStaticSd[] = {0, 0.3f, 1.0f}, kDriftAmp[] = {0, 1.8f, 3.6f};
-constexpr double kDriftPeriod = 2.85, kDriftCutSpread64 = 0.07;
+// sd 1.8 less the tracker's 0.6). Over 64 (va-round8 D: four sines held 30 s, three takes, 12 voices; 16 note starts): the voices'
+// mean offset (the held and the note starts' means averaged), the movement's amplitude from the within-voice sd (less the tracker's 0.6,
+// over the 0.43 sd of r about a 29 s mean), the static sd from the voices' means less the movement's share of them (0.178 amplitude).
+// The cutoff: a static offset per voice, uniform within +-the half-width (semitones; va-round8 DC: a saw at key 36 through LPF24 at 600,
+// each of 16 notes' cutoff fitted on harmonics 1-14 with the filter's own response, within 0.01 dB: sd 0.30 / 0.77 / 1.67 / 3.99 at
+// 64 / 80 / 100 / 127, means within their standard errors of 0; 32: half of 64's, not measured).
+constexpr float kDriftX[] = {0, 32, 64, 80, 100, 127}, kDriftMean[] = {0, 0.96f, 0.85f, 1.65f, 2.70f, 17.0f},
+                kDriftStaticSd[] = {0, 0.3f, 1.0f, 2.23f, 4.99f, 7.12f}, kDriftAmp[] = {0, 1.8f, 3.6f, 6.26f, 10.7f, 26.8f},
+                kDriftCut[] = {0, 0.256f, 0.513f, 1.341f, 2.884f, 6.902f};
+constexpr double kDriftPeriod = 2.85;
 
 // Oscillator band-limiting (saw and pulse alone, filters thru, drift 0, every key 36-108): quarter-octave
 // levels of floor(2^(n/4)) harmonics; with u = 4 log2(F / f0), level floor(u) + 1 weighs u - floor(u)
@@ -422,11 +428,11 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     s.bendUp = q[PartReceivePitchBend] ? float(q[PartPitchBendRangeUpper] - 64) : 0.f;
     s.bendDown = q[PartReceivePitchBend] ? float(q[PartPitchBendRangeLower] - 64) : 0.f;
     {
-        const float d = float(std::min(q[VoltageDrift], 64));
-        const Law mean{kDriftX, kDriftMean, 3, 0, 64}, sd{kDriftX, kDriftStaticSd, 3, 0, 64}, amp{kDriftX, kDriftAmp, 3, 0, 64};
+        const float d = float(q[VoltageDrift]);
+        const Law mean{kDriftX, kDriftMean, 6, 0, 127}, sd{kDriftX, kDriftStaticSd, 6, 0, 127}, amp{kDriftX, kDriftAmp, 6, 0, 127}, cut{kDriftX, kDriftCut, 6, 0, 127};
         s.driftMean = at(mean, d) / 100; s.driftStatic = at(sd, d) * std::sqrt(3.f) / 100; s.driftAmp = at(amp, d) / 100;
         s.driftRate = float(1 / (kDriftPeriod * sr));
-        s.driftCutMean = 0; s.driftCutSpread = float(kDriftCutSpread64 * d / 64);
+        s.driftCutMean = 0; s.driftCutSpread = at(cut, d);
     }
 
     // Filters (va-round5 F1-F3; filterFt and the laws above): the type (the band-passes are not built: thru, reported), the cutoff in

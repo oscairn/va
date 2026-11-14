@@ -108,8 +108,8 @@ static void testCoverage() {
     CHECK(notCovered(p, g, 64) == 0 && describe(p).lfo[1]);  // the filter LFO: depth verified to 40 steps
     p.set(Filter1FilterCutoffLFODepth, 300);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Filter1FilterCutoffLFODepth);
-    p = plain(); p.set(VoltageDrift, 65);
-    CHECK(notCovered(p, g, 64) == 1 && g[0].param == VoltageDrift);
+    p = plain(); p.set(VoltageDrift, 127);
+    CHECK(notCovered(p, g, 64) == 0);  // drift: measured to 127 (va-round8 D)
     // live sources: a mod wheel box on the cutoff reaches the whole box range (-24: 620 down to 236; the cutoff law is measured
     // 0-1023); aftertouch takes the 7-bit map (va-round7 A3P); an unmeasured curve is reported
     p = plain(); p.set(Box3ControllerSetSwitch, 1); p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetPolarity, 0); p.set(Box3ControllerSetRatio, 104);
@@ -368,11 +368,19 @@ static double pitchRange(int drift, uint32_t seed) {
 }
 
 static void testDrift() {
-    double moving = 0;
-    for (uint32_t s = 1; s <= 4; ++s) moving += pitchRange(64, s) / 4;
+    double moving = 0, wide = 0;
+    for (uint32_t s = 1; s <= 4; ++s) { moving += pitchRange(64, s) / 4; wide += pitchRange(127, s) / 4; }
     const double still = pitchRange(0, 1);
-    std::printf("drift: pitch range over 1 s windows: %.2f cents at 64 (4 voices), %.3f at 0\n", moving, still);
+    std::printf("drift: pitch range over 1 s windows: %.2f cents at 64 (4 voices), %.2f at 127, %.3f at 0\n", moving, wide, still);
     CHECK(moving > 1.5 && moving < 15 && still < 0.1);
+    // over 64 (va-round8 D, 12 voices held 30 s, 16 note starts): at 127 the voices sit +17 cents on average, move with 7.4 times 64's
+    // amplitude (within-voice sd 11.5 cents against 1.7) and each voice's cutoff is off by sd 4.0 semitones (64: 0.30)
+    CHECK(wide > 4 * moving);
+    auto core = std::make_unique<Core>(); core->prepare(48000);
+    Sound s; Patch p; p.set(VoltageDrift, 127); core->compile(s, p);
+    CHECK(std::fabs(s.driftMean * 100 - 17.0) < 0.01 && std::fabs(s.driftCutSpread / std::sqrt(3.f) - 3.985f) < 0.01);
+    p.set(VoltageDrift, 64); core->compile(s, p);
+    CHECK(std::fabs(s.driftCutSpread / std::sqrt(3.f) - 0.296f) < 0.01);
 }
 
 // The release law is chosen by the level at the note-off: 0.437 and under release slowly and end about 1.03 s
@@ -890,6 +898,10 @@ static void testAgeing() {
     CHECK(notCovered(q, g, 64) == 1 && g[0].param == Ageing);
     q.set(VoltageDrift, 0);
     CHECK(notCovered(q, g, 64) == 0);
+    q.set(VoltageDrift, 100); q.set(Ageing, 200);  // va-round8 D: at drift 100, ageing 200 against 100 within 12 voices' scatter
+    CHECK(notCovered(q, g, 64) == 0);
+    q.set(AmplitudeEGReleaseTime, 81);  // va-round8 R2: ageing moves the voices' spread of short releases (0 / 100 / 200 at 55: sd 0.87 / 0.57 / 0.25 ms)
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == Ageing);
 }
 
 // Aftertouch as a box source (va-round7 A3P: channel pressure through a +32 cutoff box sounds as the mod wheel at 0, 16, 32, 48, 64, 96
