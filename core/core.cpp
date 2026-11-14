@@ -777,6 +777,9 @@ void Core::reap_(uint32_t si) {
 }
 
 void Core::render(float* L, float* R, uint32_t frames) {
+    bool any = false;
+    for (const auto& p : pool_) any |= p.n != 0;
+    if (!any) return;  // the rest cost: nothing more when silent
     float* l[kMaxSounds]; float* r[kMaxSounds];
     for (uint32_t s = 0; s < kMaxSounds; ++s) l[s] = L, r[s] = R;
     render(l, r, frames);

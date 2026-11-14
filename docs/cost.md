@@ -33,6 +33,28 @@ limit count, the voice description, `notes`) visit only the active voices (a 64-
 core's `voice()` is asked only for those; the core lists the sounds with voices once a render call instead of testing all 8 at
 every control step, reaps only a sound with a voice releasing or fading, and advances the ages once a call.
 
+## Sounds sharing the instance (0.10.0)
+
+Parts sharing an instance (`docs/parameters.md`, output ports) put each sound on its own bus; the shell renders each sound on
+its own, split only at its own channels' events. `HOSTBENCH_SOUNDS=N hostbench ...` prepares probe A N times, sound k on
+channel k and bus k (nine ports, activated), the notes taken in turn. Last run (aarch64 container, `cg.sh` and hostbench, per
+block):
+
+| case | 1 sound | 5 sounds | 8 sounds |
+|---|---|---|---|
+| hosted rest | 666 | 2,077 | 2,125 |
+| hosted, 8 held voices | 98,867 | 258,562 | 411,282 |
+
+At rest the extra ports cost the zeroing of the ones activated and each sound's bus, once a block; with the main port only
+(and no ring-out) the shell takes none of that (hosted rest 666 against 787 before, with its own process loop in place of
+the SDK helper's). With voices, sharing costs what the sounds' pools cost: each sound has its own pool, and a
+partly filled lane of 4 costs as a full one, so 8 voices over 5 sounds are 5 lanes (and 5 control steps) instead of 2, 2.6
+times the same 8 voices in one sound, 4.2 times over 8 sounds. That is the core's cost of the same sounds in separate
+instances (each its own pool), which sharing does not change; it is not under the "small amount" a shared pool would give.
+Gates on the same run: core rest 211, held 8 96,257 (12.0k a voice), hosted rest 666, hosted 8 held 98,867 (+2.7 % over the
+core), hosted pattern 62,167. Memory: the instance estimate (`oscairn.memory`) went from 300,808 to 301,120 shared bytes
+(+312) and from 1,520 to 1,524 bytes a context.
+
 ## Code layout (a build-time choice)
 
 `VA_KERNEL_LAYOUT` (CMake; `VC_LAYOUT` in `core/core.cpp`, `VA_FLAGS=-DVC_LAYOUT=n` for `cg.sh`): **0** (the default) every

@@ -281,6 +281,12 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     std::array<uint64_t, kContexts> liveIn{};      // audio thread: each context's active voices (as `live`)
     void outputs(const clap_process_t* pr) {
         const uint32_t frames = pr->frames_count;
+        if (pr->audio_outputs_count == 1 && !ringOut) {  // the main port only: every sound plays there
+            float* const* o = pr->audio_outputs[0].data32;
+            std::memset(o[0], 0, frames * sizeof(float)); std::memset(o[1], 0, frames * sizeof(float));
+            busL.fill(o[0]); busR.fill(o[1]);
+            return;
+        }
         float* left[kPorts]; float* right[kPorts];
         for (uint32_t k = 0; k < kPorts; ++k) {  // ports 1-8 where the host gives and activated them, else main
             float* const* o = k < pr->audio_outputs_count ? pr->audio_outputs[k].data32 : nullptr;
@@ -360,7 +366,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             } else if (h->type == CLAP_EVENT_MIDI) s.applyMidi(*reinterpret_cast<const clap_event_midi_t*>(h));
             else if (h->type == CLAP_EVENT_NOTE_EXPRESSION) s.applyExpression(*reinterpret_cast<const clap_event_note_expression_t*>(h));
         }
-        for (uint32_t c = 0; c < kContexts; ++c) s.renderContext(c, done[c], frames);
+        if (s.live) for (uint32_t c = 0; c < kContexts; ++c) s.renderContext(c, done[c], frames);
         return CLAP_PROCESS_CONTINUE;
     }
     static uint32_t voiceNotes(const clap_plugin_t* p, oscairn_voice_budget_note_t* notes, uint32_t capacity) {
