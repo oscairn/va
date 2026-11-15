@@ -5,12 +5,13 @@ for macOS, Linux and Windows.
 
 Licence: GNU Affero General Public License v3.0 or later (`LICENSE`); the vendored headers under `third_party/` keep their own licences (MIT; `CREDITS.md`).
 
-Status: the DSP core (`core/`, a plain C++ library) plays patches of the reference analog model's
-"probe A" class and beyond: three oscillators, both filters with the reference's low-pass and high-pass
-types (the band-passes not yet), key follow and velocity on the filters, the filter and amplitude
+Status: version 0.11.1 (plugin id `org.oscairn.va`), not complete. "The reference" in these docs is
+the analog-modelling synth engine this project is measured against. The DSP core (`core/`, a
+plain C++ library) plays three oscillators, both filters with low-pass and high-pass types (the two
+band-pass types are not built), key follow and velocity on the filters, the filter and amplitude
 envelopes with their measured laws, the LFOs, portamento and controller boxes. A patch is the model's own raw parameter values (`core/params.inc`); what the core
 does not cover is reported, not approximated (`docs/coverage.md`). How it compares with the
-reference: `docs/acceptance.md`; cost: `docs/cost.md`; design: `docs/design.md`. The shell does
+reference, measured so far on one test patch: `docs/acceptance.md`; cost: `docs/cost.md`; design: `docs/design.md`. The shell does
 CLAP, parameters and state, and the Oscairn instrument contract (`oscairn.sound-contexts`,
 `oscairn.voice-budget`, `oscairn.memory`), using the Oscairn SDK's helpers.
 
@@ -38,5 +39,9 @@ instance) and `OSCAIRN_VA_MAX_VOICES_PER_SOUND` (1 to 64, each sound). Anything 
 
 The CLAP headers are vendored in `third_party/clap` and the Oscairn SDK headers in
 `third_party/oscairn-clap` (MIT; the commits are in each `upstream.json`).
+
+This project is independent and is not affiliated with or endorsed by any instrument manufacturer.
+It contains and distributes no manufacturer samples, presets, firmware or code. Product names, where
+they appear at all, belong to their owners.
 
 Release: `tools/release/` (see `release.conf`); a tag `oscairn-vX.Y.Z` triggers `.github/workflows/release.yml`.
