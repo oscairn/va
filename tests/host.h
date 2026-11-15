@@ -127,10 +127,12 @@ struct Library {
 };
 inline Library& library() { static Library l; return l; }
 
+inline int g_wakes = 0;  // the plugin's request_process calls
+
 inline const clap_host_t* testHost() {
     static const clap_host_t h = {CLAP_VERSION, nullptr, "va-tests", "oscairn", "", "1",
                                   [](const clap_host_t*, const char*) -> const void* { return nullptr; },
-                                  [](const clap_host_t*) {}, [](const clap_host_t*) {}, [](const clap_host_t*) {}};
+                                  [](const clap_host_t*) {}, [](const clap_host_t*) { ++g_wakes; }, [](const clap_host_t*) {}};
     return &h;
 }
 
@@ -153,6 +155,7 @@ struct Inst {
     bool guard = false;         // count heap allocations inside process()
     long allocations = 0;
     bool badStatus = false, badTime = false;
+    clap_process_status status = CLAP_PROCESS_CONTINUE;  // what the last block returned
 
     explicit Inst(bool start = true) {
         auto& lib = library();
@@ -207,6 +210,7 @@ struct Inst {
         if (guard) allocGuardEnable(true);
         const auto st = p->process(p, &pr);
         if (guard) { allocGuardEnable(false); allocations = allocGuardCount(); }
+        status = st;
         if (st == CLAP_PROCESS_ERROR) badStatus = true;
         if (out.badTime) badTime = true;
         if (out.dropped) { std::printf("  test log overflowed\n"); ++g_failures; }

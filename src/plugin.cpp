@@ -358,10 +358,11 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             return CLAP_PROCESS_ERROR;
         s.output = pr->out_events; s.eventTime = 0;
         struct ClearOutput { Plugin& s; ~ClearOutput() { s.output = nullptr; s.ringOut = nullptr; } } clearOutput{s};
+        const uint32_t frames = pr->frames_count, count = pr->in_events->size(pr->in_events);
+        if (!count && s.idle()) { s.outputs(pr); return CLAP_PROCESS_SLEEP; }  // nothing sounds, nothing is queued, nothing arrived
         s.applySelections(pr->out_events);
         s.keepWithinLimits();
         s.outputs(pr);
-        const uint32_t frames = pr->frames_count, count = pr->in_events->size(pr->in_events);
         std::array<uint32_t, kContexts> done{};
         for (uint32_t e = 0; e < count; ++e) {
             const auto* h = pr->in_events->get(pr->in_events, e);
@@ -377,8 +378,14 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             else if (h->type == CLAP_EVENT_NOTE_EXPRESSION) s.applyExpression(*reinterpret_cast<const clap_event_note_expression_t*>(h));
         }
         if (s.live) for (uint32_t c = 0; c < kContexts; ++c) s.renderContext(c, done[c], frames);
-        return CLAP_PROCESS_CONTINUE;
+        // Asleep once the block rendered nothing (its output is zeros) and nothing is left that moves: the host wakes the plugin
+        // at the next event, and selectionQueued / restored ask for the work that arrives without one.
+        return s.placed || !s.idle() ? CLAP_PROCESS_CONTINUE : CLAP_PROCESS_SLEEP;
     }
+    // A plugin is idle when no voice is active (released and fading ones are), no NOTE_END is owed and no selection is queued.
+    bool idle() const { return !live && !owedCount && selectionHead.load(std::memory_order_acquire) == selectionTail.load(std::memory_order_acquire); }
+    void wake() const { if (host && host->request_process) host->request_process(host); }
+    void selectionQueued() { wake(); }
     static uint32_t voiceNotes(const clap_plugin_t* p, oscairn_voice_budget_note_t* notes, uint32_t capacity) {
         auto& s = self(p); oscairn::voices::Report<kVoices> report;
         for (uint64_t m = s.live; m; m &= m - 1) {
@@ -469,6 +476,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     }
     void loadAll() { for (uint32_t i = 0; i < kContexts; ++i) if (contexts[i].prepared) { va::publish(contexts[i].patch); core->loadPatch(i, contexts[i].patch); } }
     void restored() {
+        wake();  // the NOTE_ENDs a load owes go out at the next block
         loadAll();
         shownSlot = selected[0];
         for (uint32_t i = 0; i < kParamCount; ++i) values[i].store(contexts[selected[0]].patch.p[i].get(), std::memory_order_relaxed);
