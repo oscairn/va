@@ -35,17 +35,23 @@ TEST(a_note_after_sleep_is_the_same_note) {
     CHECK(std::equal(a.L.begin() + long(from), a.L.end(), b.L.begin()) && std::equal(a.R.begin() + long(from), a.R.end(), b.R.begin()));
 }
 
-TEST(a_queued_selection_wakes_and_is_applied) {
+TEST(a_selection_on_a_sleeping_plugin_is_applied_by_the_next_block) {
     Inst a;
     a.block(128);
     CHECK_EQ(a.status, CLAP_PROCESS_SLEEP);
     char msg[128] = {};
     const uint32_t b = a.contexts->prepare(a.p, "b", nullptr, 0, "level=0.5", nullptr, msg, sizeof msg);
-    const int wakes = g_wakes;
     CHECK(a.contexts->select(a.p, b, 3));
-    CHECK_EQ(g_wakes, wakes + 1);  // the host is asked to call process
-    a.block(128);                  // no event: the selection applies, nothing is left queued, nothing was rendered
+    a.block(128);  // the host makes this call after an accepted select: it applies, nothing is left queued, nothing was rendered
     CHECK_EQ(a.status, CLAP_PROCESS_SLEEP);
     oscairn_sound_context_info_t info{};
     CHECK(a.contexts->get(a.p, 1, &info) && info.selected_channels == (1u << 3));
+}
+
+TEST(a_state_load_asks_for_a_block) {
+    Inst a;
+    a.block(128);
+    const int wakes = g_wakes;
+    CHECK(a.load(a.save()));
+    CHECK(g_wakes > wakes);
 }

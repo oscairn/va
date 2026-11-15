@@ -379,13 +379,12 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         }
         if (s.live) for (uint32_t c = 0; c < kContexts; ++c) s.renderContext(c, done[c], frames);
         // Asleep once the block rendered nothing (its output is zeros) and nothing is left that moves: the host wakes the plugin
-        // at the next event, and selectionQueued / restored ask for the work that arrives without one.
+        // at the next event and after an accepted select or choke_retiring; restored asks for the work a state load leaves.
         return s.placed || !s.idle() ? CLAP_PROCESS_CONTINUE : CLAP_PROCESS_SLEEP;
     }
     // A plugin is idle when no voice is active (released and fading ones are), no NOTE_END is owed and no selection is queued.
     bool idle() const { return !live && !owedCount && selectionHead.load(std::memory_order_acquire) == selectionTail.load(std::memory_order_acquire); }
     void wake() const { if (host && host->request_process) host->request_process(host); }
-    void selectionQueued() { wake(); }
     static uint32_t voiceNotes(const clap_plugin_t* p, oscairn_voice_budget_note_t* notes, uint32_t capacity) {
         auto& s = self(p); oscairn::voices::Report<kVoices> report;
         for (uint64_t m = s.live; m; m &= m - 1) {
@@ -521,6 +520,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         s.contexts[0].patch.traits = patch.traits;
         s.core->loadPatch(0, patch);
         select(p, 0, -1);  // the state's sound plays on every channel (from the next block)
+        s.wake();          // the host knows nothing of this select
         return true;
     }
 

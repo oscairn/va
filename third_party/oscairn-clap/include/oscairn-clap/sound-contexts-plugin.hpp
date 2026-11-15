@@ -415,7 +415,7 @@ namespace oscairn::contexts
             const auto head = s.selectionHead.load(std::memory_order_relaxed);
             if(head - s.selectionTail.load(std::memory_order_acquire) == selectionCapacity) return false;
             s.selections[head % selectionCapacity] = {0, chokeMark};
-            s.selectionHead.store(head + 1, std::memory_order_release); s.derived().selectionQueued(); return true;
+            s.selectionHead.store(head + 1, std::memory_order_release); return true;
         }
         // Audio thread, while rendering: the two ring-out channels the context adds its main output into
         // instead of its main port, or null. A retiring context (selected by no channel; only contexts
@@ -606,7 +606,7 @@ namespace oscairn::contexts
             {
                 auto& c = s.contexts[i]; if(!c.prepared || c.id != id) continue;
                 c.users.fetch_add(1, std::memory_order_release); s.selections[head % selectionCapacity] = {i, channel}; // release: the audio thread reads the id once it sees the pin
-                s.selectionHead.store(head + 1, std::memory_order_release); s.derived().selectionQueued(); return true;
+                s.selectionHead.store(head + 1, std::memory_order_release); return true;
             }
             return false;
         }
@@ -624,8 +624,6 @@ namespace oscairn::contexts
         // Main thread, after a context is unpinned and discarded.
         void discarded(Context&) {}
         void snapshotLoading(bool) {}
-        // Main thread, after a selection (or choke request) is queued: a plugin that sleeps in process() wakes there.
-        void selectionQueued() {}
         bool buildPreset(Context&, std::string&) { return true; }
         void voiceFinished(Voice&) {}
     };

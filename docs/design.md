@@ -165,8 +165,8 @@ x86_64, Windows x86_64 (MSVC; GCC/Clang-only constructs are guarded: the inline-
 
 `process` returns `CLAP_PROCESS_SLEEP` when no voice is active (released and fading ones are), no `NOTE_END` is owed,
 no selection is queued and the block rendered nothing; a block like that at its start, with no events, only clears
-the outputs. The host calls `process` again at the next event; a queued selection and a state load ask for it with
-`request_process`. All time-dependent state lives in the voices (oscillator and LFO phases, drift, envelopes, glide)
+the outputs. The host calls `process` again at the next event and, by contract, after a `select` or `choke_retiring`
+that was accepted; a state load asks for it with `request_process`. All time-dependent state lives in the voices (oscillator and LFO phases, drift, envelopes, glide)
 and is set at each note-on, and the core has no clock, LFO or random source that runs between notes, so skipped
 blocks change nothing a later note can hear: there is no known difference to a plugin that is always called.
 Sounds produced after sleeping are bit-identical to those produced after calling the idle blocks.
