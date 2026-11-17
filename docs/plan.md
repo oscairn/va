@@ -218,7 +218,8 @@ those blocks plus its parameter laws, compiled together, so the audio loop makes
 that shares this engine's wiring and parameters and differs only in its laws and shapes is a model stored in the
 sound; a different wiring is a separate plugin on the same library. The library is a build-time dependency at a
 pinned version: the shipped plugin stays self-contained. Its plan lives here until it has a repository of its own.
-Until the port, new work keeps those parts separable.
+Until the port, new work keeps those parts separable. The law set's schema and how a model is
+structured in code are in [models.md](models.md).
 
 ## 6. Next
 
