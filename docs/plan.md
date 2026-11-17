@@ -210,7 +210,17 @@ A port counts as done when all of these hold: the test suite and the cost gates 
 - Same plugin id (`org.oscairn.va`), parameter ids 0-44 ([parameters.md](parameters.md)) and raw patch format
   (`core/params.inc`).
 
-## 5. Next
+## 5. Shared building blocks
+
+At the port to Rust the engine's parts become a library other analog-style engines are built from: oscillators,
+filters, envelopes, LFOs, the controller matrix, and the aging and drift behavior. An engine is then a wiring of
+those blocks plus its parameter laws, compiled together, so the audio loop makes no choice at run time. A variant
+that shares this engine's wiring and parameters and differs only in its laws and shapes is a model stored in the
+sound; a different wiring is a separate plugin on the same library. The library is a build-time dependency at a
+pinned version: the shipped plugin stays self-contained. Its plan lives here until it has a repository of its own.
+Until the port, new work keeps those parts separable.
+
+## 6. Next
 
 This engine's package is fifteenth of seventeen in the cross-engine order (495 stock Performances touched). It comes
 late only because those Performances also need other packages; 811 of 814 stock parts are best effort today. In build
