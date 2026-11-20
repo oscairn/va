@@ -165,7 +165,8 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
 
     // ---- oscairn.voice-budget -----------------------------------------------------------
     // Past the host's limits and the device caps, voices are given up in voice-budget.h's order
-    // (the SDK's victim()) and fade out over the choke time. Audio thread only.
+    // (the SDK's victim(), and past a lowered limit what importance listed first) and fade out over
+    // the choke time. Audio thread only.
     // A voice here is a note, the unit the shell gives up: a unison note's 2 or 4 engine voices are never given up apart, so the
     // limits, the count and the cost are per note. Each sound's engine pool (vcore::kMaxVoices) still bounds its notes' widths.
     static void setLimits(const clap_plugin_t* p, uint32_t limit, const oscairn_voice_budget_context_t* list, uint32_t count) {
@@ -203,7 +204,9 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             return n;
         }
     };
-    // Every voice but `except`, as the order sees it. Held: its key is down (a pedal does not count).
+    // Every voice but `except`, as the order sees it: one Candidate a note, its weight the engine voices it runs. Held: its key
+    // is down; pedaled: its key is up and the sustain pedal holds it. Its loudness is its gain at the output (the sound's level
+    // included) and its age the note-on serial; ageMs is from the host's steady_time, at eventTime.
     void describe(Described& d, uint32_t except) const {
         for (uint64_t m = live; m; m &= m - 1) {
             const uint32_t i = lowBit(m);
@@ -212,11 +215,24 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             if (!d.present[i]) continue;
             const auto& c = contexts[v.context];
             d.width[i] = uint8_t(width(c));
-            d.c[i] = {c.id, c.selected.load(std::memory_order_relaxed) != 0, v.held, v.chokeLength != 0, false, core->voice(i).level, v.started};
+            const double ageMs = steadyTime < 0 || v.startedAt < 0 ? -1.0 : double(steadyTime + eventTime - v.startedAt) * 1000.0 / voiceRate;
+            d.c[i] = {c.id, c.selected.load(std::memory_order_relaxed) != 0, v.held, v.chokeLength != 0, false, core->output(i), v.started, v.pedaled, ageMs, float(d.width[i])};
         }
     }
     int victim(const Described& d, uint32_t incoming, uint32_t only = oscairn::voices::none) const {
         return oscairn::voices::victim(kVoices, [&](size_t i) { return d.present[i] ? &d.c[i] : nullptr; }, budget, incoming, only);
+    }
+    // Past a lowered limit: the notes the last importance report listed, in its order, while they sound; then victim()'s.
+    int listed(const Described& d, uint32_t only = oscairn::voices::none) {
+        return importanceReport.next(kVoices, [&](size_t i) { return d.present[i] ? &d.c[i] : nullptr; }, budget, only);
+    }
+    // Draft 2, after each block: each sound's least important notes (importanceReport is the helper's, kept for next()).
+    static uint32_t importance(const clap_plugin_t* p, oscairn_voice_budget_importance_t* lists, uint32_t capacity) {
+        auto& s = self(p);
+        if (!s.live) { s.importanceReport.list(0, [](size_t) { return (const oscairn::voices::Candidate*)nullptr; }, s.budget); return 0; }  // at rest: no description
+        Described d; s.describe(d, kVoices);
+        s.importanceReport.list(kVoices, [&](size_t i) { return d.present[i] ? &d.c[i] : nullptr; }, s.budget);
+        return s.importanceReport.write(lists, capacity);
     }
     bool giveUp(Described& d, int i) {
         if (i < 0) return false;
@@ -267,10 +283,10 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
             const auto& c = contexts[slot];
             if (!c.users.load(std::memory_order_acquire)) continue;
             const uint32_t own = soundLimits(c).limit;
-            while (own && d.keeping(c.id) > own && giveUp(d, victim(d, oscairn::voices::none, c.id))) {}
+            while (own && d.keeping(c.id) > own && giveUp(d, listed(d, c.id))) {}
         }
         const uint32_t cap = instanceLimit();
-        while (cap && d.keeping() > cap && giveUp(d, victim(d, oscairn::voices::none))) {}
+        while (cap && d.keeping() > cap && giveUp(d, listed(d))) {}
     }
 
     // ---- rendering ----------------------------------------------------------------------
@@ -356,8 +372,9 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         if (pr->audio_outputs_count < 1 || pr->audio_outputs[0].channel_count < 2 || !pr->audio_outputs[0].data32 ||
             !pr->audio_outputs[0].data32[0] || !pr->audio_outputs[0].data32[1])
             return CLAP_PROCESS_ERROR;
-        s.output = pr->out_events; s.eventTime = 0;
-        struct ClearOutput { Plugin& s; ~ClearOutput() { s.output = nullptr; s.ringOut = nullptr; } } clearOutput{s};
+        s.output = pr->out_events; s.eventTime = 0; s.steadyTime = pr->steady_time;
+        // after the block, eventTime is its end: the ages importance reports are the next block's start
+        struct ClearOutput { Plugin& s; uint32_t frames; ~ClearOutput() { s.output = nullptr; s.ringOut = nullptr; s.eventTime = frames; } } clearOutput{s, pr->frames_count};
         const uint32_t frames = pr->frames_count, count = pr->in_events->size(pr->in_events);
         if (!count && s.idle()) { s.outputs(pr); return CLAP_PROCESS_SLEEP; }  // nothing sounds, nothing is queued, nothing arrived
         s.applySelections(pr->out_events);
@@ -694,7 +711,7 @@ const clap_plugin_state_t kState = {Plugin::saveState, Plugin::loadState};
 const clap_plugin_state_t kSnapshot = {Plugin::saveSnapshot, Plugin::loadSnapshot};
 const oscairn_plugin_sound_contexts_t kSoundContexts = {Plugin::capacity, Plugin::get, Plugin::prepare, Plugin::select, Plugin::discard, &kSnapshot, nullptr};
 const oscairn_plugin_sound_snapshots_t kSoundSnapshots = {Plugin::prepareSnapshot, Plugin::setRingOut, Plugin::chokeRetiring, Plugin::saveSound, Plugin::soundValues};
-const oscairn_plugin_voice_budget_t kVoiceBudget = {Plugin::honorsVolume, Plugin::setLimits, Plugin::activeVoices, Plugin::voiceNotes};
+const oscairn_plugin_voice_budget_t kVoiceBudget = {Plugin::honorsVolume, Plugin::setLimits, Plugin::activeVoices, Plugin::voiceNotes, Plugin::importance};
 const oscairn_plugin_memory_t kMemory = {Plugin::memoryEstimate, Plugin::memoryCurrent};
 const oscairn_plugin_ui_t kUi = {Plugin::paramHint, nullptr, nullptr};
 
@@ -706,7 +723,7 @@ const void* Plugin::getExtension(const clap_plugin_t*, const char* id) {
     if (!std::strcmp(id, CLAP_EXT_STATE)) return &kState;
     if (!std::strcmp(id, OSCAIRN_EXT_SOUND_CONTEXTS)) return &kSoundContexts;
     if (!std::strcmp(id, OSCAIRN_EXT_SOUND_SNAPSHOTS)) return &kSoundSnapshots;
-    if (!std::strcmp(id, OSCAIRN_EXT_VOICE_BUDGET)) return &kVoiceBudget;
+    if (!std::strcmp(id, OSCAIRN_EXT_VOICE_BUDGET_DRAFT_2) || !std::strcmp(id, OSCAIRN_EXT_VOICE_BUDGET)) return &kVoiceBudget;
     if (!std::strcmp(id, OSCAIRN_EXT_MEMORY)) return &kMemory;
     if (!std::strcmp(id, OSCAIRN_EXT_UI) || !std::strcmp(id, OSCAIRN_EXT_UI_DRAFT_5) || !std::strcmp(id, OSCAIRN_EXT_UI_DRAFT_4)) return &kUi;
     return nullptr;

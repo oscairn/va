@@ -132,6 +132,9 @@ public:
     // sounded still sounds.
     uint32_t changes() const { return changes_; }
     VoiceState voice(uint32_t v) const;
+    // Its gain at the output now, linear: voice(v).level times the sound's level (its laws and calibration) and the caller's
+    // level; 1 for an oscillator at full scale, no pass over samples. 0 when the slot is free.
+    float output(uint32_t v) const;
 
     // Test hook: render with 1 or 2 lanes interleaved in the filter loops (2 is the default).
     void setInterleave(int lanes) { interleave_ = lanes == 1 ? 1 : 2; }

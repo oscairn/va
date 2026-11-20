@@ -149,6 +149,7 @@ public:
     virtual uint32_t voiceCount() const = 0;                        // voices sounding, fading ones included
     virtual uint32_t changes() const = 0;                           // moves on whenever a voice may have stopped sounding
     virtual VoiceInfo voice(uint32_t voice) const = 0;
+    virtual float output(uint32_t voice) const = 0;                 // its gain at the output, the sound's level included (vcore::Core::output)
     virtual SoundCost cost(uint32_t context) const = 0;              // any thread
     virtual void reset() = 0;                                       // every voice off now, controllers to rest
 };

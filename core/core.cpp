@@ -946,6 +946,11 @@ VoiceState Core::voice(uint32_t v) const {
     return {true, p.f[ASTG][i] >= kStageRelease || p.f[DFADE][i] > 0.f, p.f[AENV][i] * p.f[VOL][i] * p.f[FADE][i], slot_[v].age};
 }
 
+float Core::output(uint32_t v) const {
+    const VoiceState st = voice(v);
+    return st.sounding ? st.level * sound_[slot_[v].sound].level * sound_[slot_[v].sound].gain : 0.f;
+}
+
 }  // namespace vcore
 
 namespace vcore {
