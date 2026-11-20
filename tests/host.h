@@ -142,6 +142,7 @@ struct Inst {
     const clap_plugin_state_t* state = nullptr;
     const oscairn_plugin_sound_contexts_t* contexts = nullptr;
     const oscairn_plugin_voice_budget_t* budget = nullptr;
+    const oscairn_plugin_voice_budget_t* budget2 = nullptr;  // the table under draft 2's ID (with importance)
     const oscairn_plugin_memory_t* memory = nullptr;
     std::vector<Rec> log;       // every event the plugin pushed
     std::vector<float> L, R;    // every sample rendered (the main port)
@@ -171,6 +172,7 @@ struct Inst {
         state = static_cast<const clap_plugin_state_t*>(p->get_extension(p, CLAP_EXT_STATE));
         contexts = static_cast<const oscairn_plugin_sound_contexts_t*>(p->get_extension(p, OSCAIRN_EXT_SOUND_CONTEXTS));
         budget = static_cast<const oscairn_plugin_voice_budget_t*>(p->get_extension(p, OSCAIRN_EXT_VOICE_BUDGET));
+        budget2 = static_cast<const oscairn_plugin_voice_budget_t*>(p->get_extension(p, OSCAIRN_EXT_VOICE_BUDGET_DRAFT_2));
         memory = static_cast<const oscairn_plugin_memory_t*>(p->get_extension(p, OSCAIRN_EXT_MEMORY));
         snapshots = static_cast<const oscairn_plugin_sound_snapshots_t*>(p->get_extension(p, OSCAIRN_EXT_SOUND_SNAPSHOTS));
         if (start) { p->activate(p, kRate, 1, 4096); p->start_processing(p); }
