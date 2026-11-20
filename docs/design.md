@@ -89,12 +89,14 @@ freed when they end, together; none is ever given up alone. The voice budget cou
 ### The voice budget
 
 `oscairn.voice-budget`, drafts 1 and 2 (the same table for both IDs). The unit the shell gives up is a note, a unison note's
-2 or 4 voices only together, so from 0.11.2 everything the budget counts is in notes: the host's instance and per-sound
-limits, the n a lowered limit drops by, `active_voices` (the notes sounding, fading ones included), each entry of `notes`
-(one voice a note), the Polyphony Limit parameter and the device caps `OSCAIRN_VA_MAX_VOICES` and
-`OSCAIRN_VA_MAX_VOICES_PER_SOUND`. Before 0.11.2 each of these counted engine voices, a unison-4 note as 4 (and a limit under
-one note's voices still let that one note sound). A host reads smaller numbers for a unison sound: a draft-1 host as well,
-which sees the same counts as draft 2's report. The cost `active_voices` gives is one note's: an engine voice's from the
+2 or 4 voices only together, so from 0.11.2 what the host sets and reads is in notes: its instance and per-sound limits,
+the n a lowered limit drops by, `active_voices` (the notes sounding, fading ones included) and each entry of `notes` (one
+voice a note). Before 0.11.2 each of these counted engine voices, a unison-4 note as 4. A host reads smaller numbers for a
+unison sound: a draft-1 host as well, which sees the same counts as draft 2's report. What belongs to the sound and the
+device stays in engine voices: the Polyphony Limit parameter p keeps floor(p / w) notes of the sound's width w (one at
+least), and so does the per-sound cap `OSCAIRN_VA_MAX_VOICES_PER_SOUND`, the tighter of them and the host's per-sound limit
+standing; the instance cap `OSCAIRN_VA_MAX_VOICES` bounds the sum of the kept notes' widths, whole notes given up until it
+fits (a cap under one note's voices still lets that note sound). The cost `active_voices` gives is one note's: an engine voice's from the
 sound's plan times the note's width, for the costliest sound prepared. Each sound's pool in the core still holds 64 engine
 voices: before a note starts, while the sound's notes kept (not fading out) and the new one would need more, the sound's
 least important notes are given up whole, in the order below, and the core then cuts the fading ones it needs. A mono sound's

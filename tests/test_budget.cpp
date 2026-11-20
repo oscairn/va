@@ -389,8 +389,8 @@ TEST(no_allocation_in_importance) {
     CHECK_EQ(n, 1u);
 }
 
-// A unison note is one unit: a sound's limit, the instance's, the Polyphony Limit, the per-sound device cap and active_voices
-// all count it once, and the cost active_voices gives is one note's (its four engine voices').
+// A unison note is one unit to the host: a sound's limit, the instance's and active_voices count it once, and the cost
+// active_voices gives is one note's (its four engine voices'). The Polyphony Limit and the device caps stay in engine voices.
 TEST(limits_and_active_voices_count_notes_with_a_unison_sound) {
     double one = 0;
     { Inst a; a.budget->active_voices(a.p, &one); }
@@ -411,20 +411,48 @@ TEST(limits_and_active_voices_count_notes_with_a_unison_sound) {
         a.run(640);
         CHECK_EQ(a.voices(), 2u);
     }
-    {
+}
+
+// The sound's Polyphony Limit p keeps floor(p / w) notes of width w (one at least), as it did when the budget counted engine
+// voices; the per-sound device cap the same way.
+TEST(polyphony_and_the_sound_cap_count_engine_voices_with_a_unison_sound) {
+    for (const auto& c : {std::pair<int, uint32_t>{8, 2}, {9, 2}, {2, 1}}) {
         Inst a;
         unisonSound(a, 1);
-        a.block(128, {param(0, 2, 2, 1)});  // Polyphony Limit 2 on the sound channel 1 plays
+        a.block(128, {param(0, 2, c.first, 1)});  // Polyphony Limit on the sound channel 1 plays
         for (int i = 0; i < 5; ++i) { a.block(128, {on(0, 1 + i, 1, int16_t(60 + i))}); a.run(640); }
-        CHECK_EQ(a.voices(), 2u);
+        CHECK_EQ(a.voices(), c.second);
     }
-    {
-        Env env(nullptr, "3");  // each sound: 3 notes
+    for (const auto& c : {std::pair<const char*, uint32_t>{"8", 2}, {"3", 1}}) {
+        Env env(nullptr, c.first);
         Inst a;
         unisonSound(a, 1);
         for (int i = 0; i < 5; ++i) { a.block(128, {on(0, 1 + i, 1, int16_t(60 + i))}); a.run(640); }
-        CHECK_EQ(a.voices(), 3u);
+        CHECK_EQ(a.voices(), c.second);
     }
+}
+
+// The instance's device cap bounds the engine voices sounding (the sum of the kept notes' widths), whole notes given up; a cap
+// under one note's voices still lets that note sound. The host's limit beside it counts notes.
+TEST(instance_cap_bounds_engine_voices_with_a_unison_sound) {
+    for (const auto& c : {std::pair<const char*, uint32_t>{"8", 2}, {"10", 2}, {"2", 1}}) {
+        Env env(c.first);
+        Inst a;
+        unisonSound(a, 1);
+        for (int i = 0; i < 5; ++i) { a.block(128, {on(0, 1 + i, 1, int16_t(60 + i))}); a.run(640); }
+        CHECK_EQ(a.voices(), c.second);
+    }
+    Env env("8");
+    Inst a;
+    unisonSound(a, 1);
+    for (int i = 0; i < 2; ++i) { a.block(128, {on(0, 1 + i, 1, int16_t(60 + i))}); a.run(640); }  // 8 engine voices
+    a.block(128, {on(0, 10, 0, 50)});  // one more: a unison note (the oldest) goes whole, leaving 5
+    a.run(640);
+    CHECK_EQ(a.voices(), 2u);
+    CHECK((ended(a) == std::vector<int>{1}));
+    a.limits(1);  // the host's limit, in notes
+    a.run(640);
+    CHECK_EQ(a.voices(), 1u);
 }
 
 // The core holds 64 engine voices a sound: at 16 notes of 4, a new note gives up the sound's least important note whole (here

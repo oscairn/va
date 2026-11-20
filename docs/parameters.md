@@ -7,7 +7,7 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 |---|---|---|---|---|---|
 | 0 | Level | `level` | 0..1 | 1 | the sound's level, linear (1 = the patch's own level) |
 | 1 | Pan | `pan` | -1..1 | 0 | equal-power pan |
-| 2 | Polyphony Limit | `polyphony` | 1..64, stepped | 64 | the most notes the sound keeps (a unison note is one; before 0.11.2 it counted the note's 2 or 4 voices) |
+| 2 | Polyphony Limit | `polyphony` | 1..64, stepped | 64 | the most voices the sound keeps (a unison note counts as its 2 or 4 voices; a limit under one note's voices keeps that one note) |
 | 3-10 | Knob 1-8 | `knob1`..`knob8` | 0..1 | the patch's own value (raw `PartAssignableKnobNValue` / 1023; model default 512) | the part's knob N, live |
 | 11 | Ribbon | `ribbon` | 0..1 | 0 | the ribbon as a controller box source (source 6), live; the box sees v = round(value x 127) through the 7-bit map (below) |
 | 12, 13 | Switch 1, Switch 2 | `switch1`, `switch2` | 0 or 1, stepped | 0 | switches 1-2 as box sources (16, 17): 0 or 1024 |

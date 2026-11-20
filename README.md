@@ -35,8 +35,8 @@ plugin code. Heap allocations inside `process()` are counted by interposing the 
 test process, so they are caught inside the plugin whatever it is written in.
 
 Device voice caps, read when an instance is created: `OSCAIRN_VA_MAX_VOICES` (1 to 128, the
-instance) and `OSCAIRN_VA_MAX_VOICES_PER_SOUND` (1 to 64, each sound), in notes (a unison note is
-one; before 0.11.2, engine voices). Anything else is no cap.
+instance) and `OSCAIRN_VA_MAX_VOICES_PER_SOUND` (1 to 64, each sound), in engine voices (a unison
+note counts as its 2 or 4; a cap under one note's voices still lets that note sound). Anything else is no cap.
 
 The CLAP headers are vendored in `third_party/clap` and the Oscairn SDK headers in
 `third_party/oscairn-clap` (MIT; the commits are in each `upstream.json`).
