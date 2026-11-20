@@ -84,8 +84,32 @@ filter's peak as the filter stands. A filter that rings after its input stops is
 A unison note (`Unison` 1 or 2) is 2 or 4 whole voices in the pool, each with its own phases and drift, its detune and its two
 channel gains as per-voice fields (0 and 1 for a note of one voice, so such a note renders bit for bit as before). The note's
 voices are one note everywhere else: a note-off, a fade, a steal, a mono take-over and a glide move all of them, and the slot is
-freed when they end, together; none is ever given up alone. The voice budget counts each (the extension's "one unison copy"
-is a voice, and the plan's cost is one voice's): a unison-4 note needs 4 voices of a limit, and the shell gives the note up whole.
+freed when they end, together; none is ever given up alone. The voice budget counts the note once (below).
+
+### The voice budget
+
+`oscairn.voice-budget`, drafts 1 and 2 (the same table for both IDs). The unit the shell gives up is a note, a unison note's
+2 or 4 voices only together, so from 0.11.2 everything the budget counts is in notes: the host's instance and per-sound
+limits, the n a lowered limit drops by, `active_voices` (the notes sounding, fading ones included), each entry of `notes`
+(one voice a note), the Polyphony Limit parameter and the device caps `OSCAIRN_VA_MAX_VOICES` and
+`OSCAIRN_VA_MAX_VOICES_PER_SOUND`. Before 0.11.2 each of these counted engine voices, a unison-4 note as 4 (and a limit under
+one note's voices still let that one note sound). A host reads smaller numbers for a unison sound: a draft-1 host as well,
+which sees the same counts as draft 2's report. The cost `active_voices` gives is one note's: an engine voice's from the
+sound's plan times the note's width, for the costliest sound prepared. Each sound's pool in the core still holds 64 engine
+voices: before a note starts, while the sound's notes kept (not fading out) and the new one would need more, the sound's
+least important notes are given up whole, in the order below, and the core then cuts the fading ones it needs. A mono sound's
+note takes its sounding voices over and needs no room.
+
+Draft 2's `importance` lists each sound's 16 least important notes through the SDK's `Importance` helper, from the same
+description the give-ups use (`Plugin::describe`). Weight: the note's engine voices (its unison width). Level: its gain at
+the output, the amplitude envelope times the volume expression and the fade, the sound's level laws and calibration and its
+Level parameter (`vcore::Core::output`, no pass over samples; velocity does not scale this engine's level), 0 dB being an
+oscillator at full scale; the unison copies' own gains are left out. State: held (key down), pedaled (key up, the sustain
+pedal holding it) or released; a note below -60 dBFS counts as released unless struck in the last 50 ms. Age: the note-on
+serial, and the time since the note-on from the host's `steady_time`. A new note makes room through the SDK's `victim()`;
+at a block's start, past a limit the host lowered, `Importance::next()` gives up the notes the last report listed, in its
+order, while they still sound in their slots, then `victim()`'s. Either way the note fades out over the choke time (3 ms)
+and ends with its NOTE_END. At rest `importance` describes nothing.
 
 ### Sounds sharing lanes (a design for a later round; not built)
 

@@ -4,6 +4,7 @@
 
 Version 0.11.1 (the version measured below). Implementation language today: C++ (the DSP core in `core/` and the
 plugin shell). Everything in Oscairn's plugin set is to end up in Rust: the engines port after their coverage work, and new effect types are written in Rust from the start.
+From 0.11.2 the voice budget counts notes and answers draft 2's importance report ([design.md](design.md#the-voice-budget)).
 
 ## 2. Supported
 

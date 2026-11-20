@@ -271,7 +271,7 @@ channels apart); the engine renders the same patches (tests/core `testUnison`: t
 | mono, portamento 72 -> 84 at time 64, mode 1 detune 15 spread 15 | 1 | the copies glide together, at -/+ 14.94 cents and -14.68 dB after it | every copy of the note glides; after a glide the copies at -/+ 15 cents and equal (tests/core) | | pass |
 | the copies' relative phase at a note's start (detune 0, 12 notes of one key) | 12 / 12 | modes 1 and 2: deterministic cycles of 8 and 4 notes (the copies are voices of a pool that run on between notes: the same key struck again meets the same phase relations); mean cos^2 of half the relative phase 0.53 over mode 1's 8 | each copy at a random phase (mean 0.5) | | known difference: the same distribution, not the reference's sequence; heard only at detune 0, which no part uses |
 
-Whole-note behaviour (tests/core `testUnisonNotes`, the voice budget's `unison_note_counts_its_voices_and_goes_whole`): a unison note's
+Whole-note behaviour (tests/core `testUnisonNotes`, the voice budget's `unison_note_counts_as_one_and_goes_whole`): a unison note's
 2 or 4 voices start, release, end, fade and are freed on the same control step (4,000 random notes, releases, chokes, kills and steals
 on sounds of 2 and 4: the voice count is always a whole number of notes); a note stolen in its slot takes its copies with it; a full
 pool cuts a note already fading for a new one, and a note with no room does not sound (its slot reports so and the shell ends it).
