@@ -5,7 +5,7 @@ for macOS, Linux and Windows.
 
 Licence: GNU Affero General Public License v3.0 or later (`LICENSE`); the vendored headers under `third_party/` keep their own licences (MIT; `CREDITS.md`).
 
-Status: version 0.11.1 (plugin id `org.oscairn.va`), not complete. "The reference" in these docs is
+Status: version 0.11.2 (plugin id `org.oscairn.va`), not complete. "The reference" in these docs is
 the analog-modelling synth engine this project is measured against. The DSP core (`core/`, a
 plain C++ library) plays three oscillators, both filters with low-pass and high-pass types (the two
 band-pass types are not built), key follow and velocity on the filters, the filter and amplitude
