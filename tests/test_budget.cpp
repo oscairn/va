@@ -179,27 +179,25 @@ TEST(notes_and_active_voices_report) {
     CHECK_EQ(a.voices(), 1u);
 }
 
-// A unison note is 2 (mode 1) or 4 (mode 2) engine voices: the limits and active_voices count each, notes() reports them per
-// note, and a note is given up whole (both copies fade and end together; never one copy alone). A limit under one note's voices
-// still lets that one note sound.
-TEST(unison_note_counts_its_voices_and_goes_whole) {
+// A unison note is 2 (mode 1) or 4 (mode 2) engine voices but one note: the limits, active_voices and notes() count it once,
+// and it is given up whole (both copies fade and end together; never one copy alone).
+TEST(unison_note_counts_as_one_and_goes_whole) {
     for (int mode : {1, 2}) {
-        const uint32_t w = mode == 1 ? 2 : 4;
         Inst a;
         char msg[64];
         const uint32_t u = a.contexts->prepare(a.p, "u", nullptr, 0, mode == 1 ? "Unison=1 UnisonDetune=6 AmplitudeEGReleaseTime=64" : "Unison=2 UnisonDetune=6 AmplitudeEGReleaseTime=64", nullptr, msg, sizeof msg);
         a.contexts->select(a.p, u, 1);
-        a.limits(2 * w);
+        a.limits(2);
         a.block(128);
         for (int i = 0; i < 3; ++i) { a.block(128, {on(0, 1 + i, 1, 60 + i)}); a.run(640); }  // the third note gives up the first, whole
-        CHECK_EQ(a.voices(), 2 * w);
+        CHECK_EQ(a.voices(), 2u);
         CHECK((ended(a) == std::vector<int>{1}));
         oscairn_voice_budget_note_t n[8]{};
         CHECK_EQ(a.budget->notes(a.p, n, 8), 2u);
-        for (int k = 0; k < 2; ++k) CHECK_EQ(n[k].voices, w);
-        a.limits(1);  // under one note: the newest note still sounds whole
+        for (int k = 0; k < 2; ++k) CHECK_EQ(n[k].voices, 1u);
+        a.limits(1);
         a.run(640);
-        CHECK_EQ(a.voices(), w);
+        CHECK_EQ(a.voices(), 1u);
         CHECK((ended(a) == std::vector<int>{1, 2}));
         a.block(128, {off(0, 3, 1, 62)});
         a.run(48000);

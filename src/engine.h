@@ -22,8 +22,8 @@ constexpr uint32_t kVoices = 64;   // the pool: the most voices the core can sou
 constexpr uint32_t kContexts = 8;  // sound contexts (slot 0 is the default sound)
 constexpr uint32_t kPorts = kContexts + 1;  // stereo output ports: main and a sound bus for each sound
 
-// The parameters, per sound. level: linear, 1 = the patch's own level; polyphony: the most voices
-// this sound may keep (1..kVoices).
+// The parameters, per sound. level: linear, 1 = the patch's own level; polyphony: the most notes
+// this sound may keep (1..kVoices; a unison note is one).
 // knob1..knob8: the part's knobs 1-8 (raw 0..1023 as 0..1), live: the controller boxes they drive
 // follow at the next control step. A sound starts at its patch's own knob values. Ids are stable (docs/parameters.md).
 // ribbon, switch1, switch2: the part's ribbon and switches 1-2 as controller box sources (0..1 as a 7-bit controller's 0..127);

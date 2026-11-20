@@ -101,10 +101,8 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     }
     bool accepts(const Patch& p, const clap_event_note_t& n) { return keySounds(p, n.key, n.velocity); }
     bool mono(const Context& c) const { return va::mono(c.patch); }  // its notes share one voice
-    // The engine voices one note of the sound takes (its unison copies): the budget counts each, and gives a note up only whole.
+    // The engine voices one note of the sound takes (its unison copies). The budget counts notes, which it gives up only whole.
     static uint32_t width(const Context& c) { return unisonVoices(c.patch); }
-    // A limit under one note's voices still lets that one note sound (a unison note is never played in part).
-    static uint32_t atLeast(uint32_t limit, uint32_t voices) { return limit && limit < voices ? voices : limit; }
     uint32_t index(const Voice& v) const { return uint32_t(&v - voices.data()); }
     void start(Voice& v, Context& c) {
         const uint32_t i = index(v);
@@ -168,22 +166,24 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     // ---- oscairn.voice-budget -----------------------------------------------------------
     // Past the host's limits and the device caps, voices are given up in voice-budget.h's order
     // (the SDK's victim()) and fade out over the choke time. Audio thread only.
-    // A voice here is an engine voice: a unison note is 2 or 4 of them (the extension's "one unison copy"), so the limits, the
-    // count and the cost are per copy; the order still picks notes, and a note given up fades as a whole (never a copy alone).
+    // A voice here is a note, the unit the shell gives up: a unison note's 2 or 4 engine voices are never given up apart, so the
+    // limits, the count and the cost are per note. Each sound's engine pool (vcore::kMaxVoices) still bounds its notes' widths.
     static void setLimits(const clap_plugin_t* p, uint32_t limit, const oscairn_voice_budget_context_t* list, uint32_t count) {
         self(p).budget.set(limit, list, count);
     }
     static uint32_t activeVoices(const clap_plugin_t* p, double* cost) {
         auto& s = self(p);
         if (cost) *cost = s.voiceCost();
-        return s.core->voiceCount();
+        uint32_t n = 0;
+        for (uint64_t m = s.live; m; m &= m - 1) ++n;  // the notes, fading ones included
+        return n;
     }
-    // One voice's estimated cost (microseconds a block): the costliest sound in use, from its plan,
-    // before any note has sounded.
+    // One note's estimated cost (microseconds a block): the costliest note of the sounds in use (an engine voice's cost from
+    // its plan, times the note's width), before any note has sounded.
     double voiceCost() const {
         double worst = 0;
         for (uint32_t i = 0; i < kContexts; ++i)
-            if (contexts[i].prepared) worst = std::max(worst, core->cost(i).voiceMicros);
+            if (contexts[i].prepared) worst = std::max(worst, core->cost(i).voiceMicros * width(contexts[i]));
         return worst;
     }
     uint32_t instanceLimit() const { return tighter(budget.limit, deviceCap); }
@@ -196,9 +196,10 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         std::array<oscairn::voices::Candidate, kVoices> c{};
         std::array<bool, kVoices> present{};
         std::array<uint8_t, kVoices> width{};  // each note's engine voices
-        uint32_t keeping(uint32_t id = oscairn::voices::none) const {
+        // The notes kept (not fading out), or with `engine` their engine voices.
+        uint32_t keeping(uint32_t id = oscairn::voices::none, bool engine = false) const {
             uint32_t n = 0;
-            for (uint32_t i = 0; i < kVoices; ++i) n += present[i] && !c[i].ending && (id == oscairn::voices::none || c[i].context == id) ? width[i] : 0;
+            for (uint32_t i = 0; i < kVoices; ++i) n += present[i] && !c[i].ending && (id == oscairn::voices::none || c[i].context == id) ? (engine ? width[i] : 1) : 0;
             return n;
         }
     };
@@ -225,28 +226,29 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         d.c[size_t(i)].ending = true;
         return true;
     }
-    // Before a note starts in `c`: room for its voices within the limits.
+    // Before a note starts in `c`: room for it within the limits, and for its engine voices in the sound's pool (whole notes
+    // of the sound go; the core then cuts the fading ones it needs). A mono sound's note takes its sounding voices over.
     void makeRoom(const Context& c, uint32_t self_) {
         Described d; describe(d, self_);
-        const uint32_t n = width(c), own = atLeast(soundLimits(c).limit, n), cap = atLeast(instanceLimit(), n);
-        while (own && d.keeping(c.id) + n > own && giveUp(d, victim(d, c.id, c.id))) {}
-        while (cap && d.keeping() + n > cap && giveUp(d, victim(d, c.id))) {}
+        const uint32_t own = soundLimits(c).limit, cap = instanceLimit(), n = width(c);
+        while (own && d.keeping(c.id) + 1 > own && giveUp(d, victim(d, c.id, c.id))) {}
+        while (!mono(c) && d.keeping(c.id, true) + n > vcore::kMaxVoices && giveUp(d, victim(d, c.id, c.id))) {}
+        while (cap && d.keeping() + 1 > cap && giveUp(d, victim(d, c.id))) {}
     }
     // Whether every sound and the instance keep at most their limits (Described::keeping's count, without the core's levels).
     bool withinLimits() const {
         std::array<uint32_t, kContexts> n{};
-        uint32_t all = 0, widest = 1;
+        uint32_t all = 0;
         for (uint64_t m = live; m; m &= m - 1) {
             const auto& v = voices[lowBit(m)];
             if (!v.active || v.chokeLength) continue;
-            const uint32_t w = width(contexts[v.context]);
-            n[v.context] += w; all += w; widest = std::max(widest, w);
+            ++n[v.context]; ++all;
         }
-        const uint32_t cap = atLeast(instanceLimit(), widest);
+        const uint32_t cap = instanceLimit();
         if (cap && all > cap) return false;
         for (uint32_t slot = 0; slot < kContexts; ++slot)
             if (n[slot] && contexts[slot].users.load(std::memory_order_acquire)) {
-                const uint32_t own = atLeast(soundLimits(contexts[slot]).limit, width(contexts[slot]));
+                const uint32_t own = soundLimits(contexts[slot]).limit;
                 if (own && n[slot] > own) return false;
             }
         return true;
@@ -264,12 +266,10 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         for (uint32_t slot = 0; slot < kContexts; ++slot) {
             const auto& c = contexts[slot];
             if (!c.users.load(std::memory_order_acquire)) continue;
-            const uint32_t own = atLeast(soundLimits(c).limit, width(c));
+            const uint32_t own = soundLimits(c).limit;
             while (own && d.keeping(c.id) > own && giveUp(d, victim(d, oscairn::voices::none, c.id))) {}
         }
-        uint8_t widest = 1;
-        for (uint32_t i = 0; i < kVoices; ++i) if (d.present[i] && !d.c[i].ending) widest = std::max(widest, d.width[i]);
-        const uint32_t cap = atLeast(instanceLimit(), widest);
+        const uint32_t cap = instanceLimit();
         while (cap && d.keeping() > cap && giveUp(d, victim(d, oscairn::voices::none))) {}
     }
 
@@ -389,7 +389,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         auto& s = self(p); oscairn::voices::Report<kVoices> report;
         for (uint64_t m = s.live; m; m &= m - 1) {
             const auto& v = s.voices[lowBit(m)];
-            if (v.active) for (uint32_t k = width(s.contexts[v.context]); k; --k) report.add(v.noteId, 0, v.channel, v.key, s.loudness(v));  // its voices
+            if (v.active) report.add(v.noteId, 0, v.channel, v.key, s.loudness(v));  // one voice: the note
         }
         return report.write(notes, capacity);
     }
