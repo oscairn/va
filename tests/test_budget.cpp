@@ -427,6 +427,32 @@ TEST(a_new_unison_note_in_a_full_pool_gives_up_the_first_listed_note) {
     CHECK((newUnisonNoteInAFullPool(false) == std::vector<int>{1}));
 }
 
+// The device cap (8 engine voices) is exceeded at a block's start: eight plain notes, then the sound turns unison (4 engine voices
+// a note), so two notes fit. Listed quietest first: 2, 5, 8, 3, 6, 4, 7, 1; then the levels move (2 loudest, 1 quietest).
+static std::vector<int> deviceCapExceededAtABlocksStart(bool report) {
+    Env env("8");
+    Inst a;
+    const double vol[8] = {0.9, 0.2, 0.5, 0.7, 0.3, 0.6, 0.8, 0.4};
+    std::vector<Bytes> ev;
+    for (int i = 0; i < 8; ++i) ev.push_back(on(0, 1 + i, 0, int16_t(60 + i)));
+    for (int i = 0; i < 8; ++i) ev.push_back(volume(1, 1 + i, 0, int16_t(60 + i), vol[i]));
+    a.block(128, ev);
+    a.run(2560);
+    if (report) {
+        const Report r = importance(a);
+        CHECK(r.of(0) && r.of(0)->count == 8);
+    }
+    a.block(128, {volume(0, 2, 0, 61, 1.0), volume(0, 1, 0, 60, 0.05)});
+    CHECK(a.load(std::string("oscairn-va-state 4\n1 0 64") + kKnobs + " \"vcore-patch/1 " + kUnison4 + "\"\n"));
+    a.run(640);
+    return ended(a);
+}
+
+TEST(a_device_cap_exceeded_at_a_blocks_start_gives_up_the_listed_notes_first) {
+    CHECK((deviceCapExceededAtABlocksStart(true) == std::vector<int>{2, 3, 4, 5, 6, 8}));
+    CHECK((deviceCapExceededAtABlocksStart(false) == std::vector<int>{1, 3, 4, 5, 6, 8}));  // victim()'s order, as before
+}
+
 TEST(no_allocation_in_importance) {
     if (!allocGuardAvailable()) { std::printf("  allocation guard unavailable in this build: not checked\n"); return; }
     Inst a;

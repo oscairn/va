@@ -306,7 +306,7 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
         while (cap && d.keeping() > cap && giveUp(d, listed(d))) {}
         uint32_t widest = 1;  // a cap under one note's engine voices still lets that one note sound
         for (uint32_t i = 0; i < kVoices; ++i) if (d.present[i] && !d.c[i].ending) widest = std::max<uint32_t>(widest, d.width[i]);
-        while (deviceCap && d.keeping(oscairn::voices::none, true) > std::max(deviceCap, widest) && giveUp(d, victim(d, oscairn::voices::none))) {}
+        while (deviceCap && d.keeping(oscairn::voices::none, true) > std::max(deviceCap, widest) && giveUp(d, listed(d))) {}
     }
 
     // ---- rendering ----------------------------------------------------------------------
