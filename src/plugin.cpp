@@ -228,6 +228,18 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     int listed(const Described& d, uint32_t only = oscairn::voices::none) {
         return importanceReport.next(kVoices, [&](size_t i) { return d.present[i] ? &d.c[i] : nullptr; }, budget, only);
     }
+    // To make room for a note in `incoming`: a listed note first, as listed() gives it; when none is left (next() would fall back
+    // to victim() without the incoming note), victim()'s with it.
+    int roomVictim(const Described& d, uint32_t incoming, uint32_t only) {
+        const int i = listed(d, only);
+        if (i >= 0)
+            for (uint32_t k = 0; k < importanceReport.count; ++k) {
+                const auto& l = importanceReport.lists[k];
+                for (uint32_t e = 0; e < l.out.count; ++e)
+                    if (l.least[e].index == size_t(i) && l.least[e].c.age == d.c[size_t(i)].age && l.least[e].c.context == d.c[size_t(i)].context) return i;
+            }
+        return victim(d, incoming, only);
+    }
     // Draft 2, after each block: each sound's least important notes (importanceReport is the helper's, kept for next()).
     static uint32_t importance(const clap_plugin_t* p, oscairn_voice_budget_importance_t* lists, uint32_t capacity) {
         auto& s = self(p);
@@ -250,10 +262,10 @@ struct Plugin : oscairn::contexts::Engine<Plugin, Voice, Patch, kContexts, kVoic
     void makeRoom(const Context& c, uint32_t self_) {
         Described d; describe(d, self_);
         const uint32_t own = soundLimits(c).limit, cap = instanceLimit(), n = width(c);
-        while (own && d.keeping(c.id) + 1 > own && giveUp(d, victim(d, c.id, c.id))) {}
-        while (!mono(c) && d.keeping(c.id, true) + n > vcore::kMaxVoices && giveUp(d, victim(d, c.id, c.id))) {}
-        while (cap && d.keeping() + 1 > cap && giveUp(d, victim(d, c.id))) {}
-        while (deviceCap && d.keeping(oscairn::voices::none, true) + n > std::max(deviceCap, n) && giveUp(d, victim(d, c.id))) {}
+        while (own && d.keeping(c.id) + 1 > own && giveUp(d, roomVictim(d, c.id, c.id))) {}
+        while (!mono(c) && d.keeping(c.id, true) + n > vcore::kMaxVoices && giveUp(d, roomVictim(d, c.id, c.id))) {}
+        while (cap && d.keeping() + 1 > cap && giveUp(d, roomVictim(d, c.id, oscairn::voices::none))) {}
+        while (deviceCap && d.keeping(oscairn::voices::none, true) + n > std::max(deviceCap, n) && giveUp(d, roomVictim(d, c.id, oscairn::voices::none))) {}
     }
     // Whether every sound and the instance keep at most their limits (Described::keeping's count, without the core's levels).
     bool withinLimits() const {

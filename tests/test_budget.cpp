@@ -377,6 +377,56 @@ TEST(lowered_limit_gives_up_exactly_what_importance_listed) {
     }
 }
 
+// Three held notes at the limit, the quietest listed first (2, then 3, then 1), then the levels move: 2 loudest, 1 quietest.
+// A new note gives up the note the host was told (2) once a report was made; without a report, victim()'s (1).
+static std::vector<int> newNoteAtTheLimit(bool report) {
+    Inst a;
+    a.limits(3);
+    a.block(128, {on(0, 1, 0, 60), on(0, 2, 0, 62), on(0, 3, 0, 64), volume(1, 1, 0, 60, 0.9), volume(1, 2, 0, 62, 0.2), volume(1, 3, 0, 64, 0.5)});
+    a.run(2560);
+    if (report) {
+        const Report r = importance(a);
+        CHECK(r.of(0) && r.of(0)->count == 3);
+    }
+    a.block(128, {volume(0, 2, 0, 62, 1.0), volume(0, 1, 0, 60, 0.1)});
+    a.block(128, {on(0, 4, 0, 66)});
+    a.run(640);
+    return ended(a);
+}
+
+TEST(a_new_note_at_the_limit_gives_up_the_first_listed_note) {
+    CHECK((newNoteAtTheLimit(true) == std::vector<int>{2}));
+}
+
+TEST(a_new_note_at_the_limit_without_a_report_gives_up_victims_note) {
+    CHECK((newNoteAtTheLimit(false) == std::vector<int>{1}));  // as before the importance report was used to make room
+}
+
+// The same where the sound's pool of 64 engine voices is what is full: 16 unison notes of 4, 7 then 3 listed first, then 1 the quietest.
+static std::vector<int> newUnisonNoteInAFullPool(bool report) {
+    Inst a;
+    const uint32_t u = unisonSound(a, 1);
+    (void)u;
+    std::vector<Bytes> ev;
+    for (int i = 0; i < 16; ++i) ev.push_back(on(0, 1 + i, 1, int16_t(40 + i)));
+    for (int i = 0; i < 16; ++i) ev.push_back(volume(1, 1 + i, 1, int16_t(40 + i), i == 6 ? 0.1 : i == 2 ? 0.15 : 0.3 + 0.04 * i));
+    a.block(128, ev);
+    a.run(2560);
+    if (report) {
+        const Report r = importance(a);
+        CHECK(r.of(u) && r.of(u)->count == 16);
+    }
+    a.block(128, {volume(0, 7, 1, 46, 1.0), volume(0, 1, 1, 40, 0.01)});
+    a.block(128, {on(0, 17, 1, 60)});
+    a.run(640);
+    return ended(a);
+}
+
+TEST(a_new_unison_note_in_a_full_pool_gives_up_the_first_listed_note) {
+    CHECK((newUnisonNoteInAFullPool(true) == std::vector<int>{7}));
+    CHECK((newUnisonNoteInAFullPool(false) == std::vector<int>{1}));
+}
+
 TEST(no_allocation_in_importance) {
     if (!allocGuardAvailable()) { std::printf("  allocation guard unavailable in this build: not checked\n"); return; }
     Inst a;
