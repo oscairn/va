@@ -161,14 +161,14 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
             const float s = float(q[Param(PartAssignableKnob1Value + src - 8)]);
             if (curve > 0) {  // a measured curve holds at its knots only
                 bool onKnot = false;
-                for (float k : kCurveS) onKnot |= s > k - 2.5f && s < k + 2.5f;
-                if (!onKnot) g.add(box(b, Box1ControllerSetCurveType), "controller box curve: measured at 17 points, the knob is between them");
+                for (int v = 0; v < 128; ++v) { const float k = curveKnot(v); onKnot |= s > k - 2.5f && s < k + 2.5f; }
+                if (!onKnot) g.add(box(b, Box1ControllerSetCurveType), "controller box curve: measured at the mod wheel's 128 values, the knob is between them");
             }
             clo = chi = curveAt(curve, s);
-        } else {
-            if (curve > 0) g.add(box(b, Box1ControllerSetCurveType), "controller box curve: measured at 17 points, a live source moves between them");
+        } else {  // the 7-bit sources land on the knots; the bend (v / 16) between them
+            if (curve > 0 && src == 0) g.add(box(b, Box1ControllerSetCurveType), "controller box curve: measured at the mod wheel's 128 values, the pitch bend moves between them");
             clo = 1e9f; chi = -1e9f;
-            for (float k : kCurveS) { const float c = curveAt(curve, k); clo = c < clo ? c : clo; chi = c > chi ? c : chi; }
+            for (int v = 0; v < 128; ++v) { const float c = curveAt(curve, curveKnot(v)); clo = c < clo ? c : clo; chi = c > chi ? c : chi; }
         }
         const int rr = q[box(b, Box1ControllerSetRatio)] - 128;
         const float ratio = float(rr == 127 ? 128 : rr), off = q[box(b, Box1ControllerSetPolarity)] ? 512.f : 1024.f;

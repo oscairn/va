@@ -46,7 +46,7 @@ parameter id.
 | `Filter1FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 188 | 272 | yes | open |
 | `PartKeyControllerSet1Switch`: key controller boxes: not built | 164 | 220 | yes | open |
 | `Filter1FilterResonance`: resonance at high cutoffs: the fit misses by over 1 dB there (any value to 2.1 kHz, LPF24 0.7 kHz; to 64 up to 5.9 / 2.1 kHz; 32 anywhere) | 162 | 208 | yes | open |
-| `BoxN ControllerSetCurveType`: controller box curve: not measured | 135 | 184 | yes | open |
+| `BoxN ControllerSetCurveType`: controller box curve: not measured | 135 | 184 | yes | partly done (0.11.4): 35 preset curves measured at the mod wheel's 128 values; counted again with the engine's report on the stock set read through the converter, 60 parts (49 Performances) on curves still not measured (fully covered parts 3 to 4) |
 | `AmplitudeSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 115 | 194 | yes | open |
 | `Filter1FilterOutLevel`: filter out level: no measured law | 106 | 134 | yes | open |
 | `Ageing`: aging: no effect on the drift (0-200 at drift 0, 100-200 at drift 64 and 100); with a release under 100 it moves the voices' spread of release times, not built | 105 | 157 | yes | open |
@@ -77,7 +77,7 @@ parameter id.
 | `Osc2OscillatorFMLevel`: FM: out of scope | 36 | 48 | yes | open |
 | `AmplitudeLFOWave`: amplitude LFO wave: only the sine's phase is measured | 35 | 46 | yes | open |
 | `Osc3OscillatorPulseWidth`: oscillator 3's pulse: only width 128 is built | 33 | 45 | yes | open |
-| `BoxN ControllerSetCurveType`: controller box curve: measured at 17 points, a live source moves between them | 32 | 36 | yes | open |
+| `BoxN ControllerSetCurveType`: controller box curve: measured at 17 points, a live source moves between them | 32 | 36 | yes | done (0.11.4): the 7-bit sources land on the curves' 128 measured values; the bend, which moves between them, is reported (counted again: 0 parts) |
 | `Osc1OscillatorSelfSyncLFODepth`: sync: out of scope | 31 | 46 | yes | open |
 | `BoxN ControllerSetDestination`: controller box on oscillator 3's level: not built | 31 | 40 | yes | open |
 | `Filter2FilterOutLevel`: filter out level: no measured law | 30 | 37 | yes | open |
@@ -126,7 +126,7 @@ parameter id.
 | `Osc1OscillatorWave`: controller box on the wave with a pulse width other than 128 or moving: not built | 11 | 16 | yes | open |
 | `Osc3OscillatorWaveShaper`: wave shaper: out of scope | 11 | 16 | yes | open |
 | `Osc1OscillatorPitchEGDepthVelocitySensitivity`: velocity sensitivity: no measured law | 11 | 12 | yes | open |
-| `BoxN ControllerSetCurveType`: controller box curve: measured at 17 points, the knob is between them | 10 | 18 | yes | open |
+| `BoxN ControllerSetCurveType`: controller box curve: measured at 17 points, the knob is between them | 10 | 18 | yes | open: since 0.11.4 a knob more than 2.5 from one of the mod wheel's 128 values; counted again, 26 parts (15 Performances), more than before as knob boxes on the newly measured curves now reach this check |
 | `Osc2OscillatorPulseWidthVelocitySensitivity`: velocity sensitivity: no measured law | 10 | 17 | yes | open |
 | `PartLfoLFODepth2`: part LFO: not built | 10 | 16 | yes | open |
 | `Osc1OscillatorRingLevelVelocitySensitivity`: velocity sensitivity: no measured law | 10 | 13 | yes | open |

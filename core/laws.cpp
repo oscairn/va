@@ -324,31 +324,30 @@ static bool buildLaws() {
 }
 const LawTables& lawTables() { static const bool built = buildLaws(); (void)built; return gLaw; }
 
-// Curves (the box's curve bank 0): 0 the linear one (Standard, parameter 5: c = s, 1024 at 1023); the others measured at
-// 17 source values (va-round3 R1 V_*: the mod wheel at 0, 8, ..., 120, 127 through a box on the pitch LFO's depth, c read
-// back to +-5 of 1024), linear between: kCurveKnots.
-// (the mod wheel at 0, 8, ..., 120, 127 through the 7-bit map, va-round5 C1: 8 v up to 64, then 512 + (v - 64) 512 / 63)
-const float kCurveS[17] = {0, 64, 128, 192, 256, 320, 384, 448, 512, 577.0159f, 642.0317f, 707.0476f, 772.0635f, 837.0794f, 902.0952f, 967.1111f, 1024};
+// Curves (the box's curve bank 0): 0 the linear one (Standard, parameter 5: c = s, 1024 at 1023); the others measured at the
+// mod wheel's 128 values (curves.inc: each wheel value v at curveKnot(v)), straight between. They replace six 17-point tables
+// (va-round3 R1 V_*: the wheel at 0, 8, ..., 120, 127 through a box on the pitch LFO's depth, c read back to +-5 of 1024), which
+// the 128-point readings match at those points within 6 of 1024; between them the old straight lines were off by up to 197.
 const CurveDef kCurves[kCurveCount] = {
     {0, 5, 0, {}},
-    {0, 6, 0, {0, 33, 71, 118, 156, 204, 261, 308, 365, 431, 497, 573, 649, 734, 829, 924, 1024}},
-    {0, 9, 0, {0, 0, 14, 24, 33, 43, 52, 71, 81, 109, 137, 175, 223, 298, 412, 630, 1024}},
-    {0, 10, 0, {0, 0, 0, 0, 0, 14, 14, 14, 24, 33, 43, 52, 71, 99, 156, 298, 1024}},
-    {2, 10, 4, {0, 0, 0, 0, 0, 0, 0, 0, 33, 156, 280, 412, 526, 659, 791, 914, 1024}},
-    {2, 0, 4, {0, 128, 251, 374, 507, 621, 753, 877, 1009, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024}},
-    {2, 6, 1, {0, 0, 0, 0, 0, 0, 0, 0, 128, 384, 630, 895, 1024, 1024, 1024, 1024, 1024}},
+#include "curves.inc"
 };
+// the mod wheel's value v as a box source: the 7-bit map (va-round5 C1, Core's sevenBit): 8 v up to 64, then 512 + (v - 64) 512 / 63
+float curveKnot(int v) { return v <= 64 ? float(8 * v) : 512.f + float(v - 64) * (512.f / 63); }
 int findCurve(int bank, int type, int p1, int p2) {
     if (bank) return -1;
-    for (int i = 0; i < kCurveCount; ++i) if (kCurves[i].type == type && kCurves[i].p1 == p1 && (type == 0 || kCurves[i].p2 == p2)) return i;
+    for (int i = 0; i < kCurveCount; ++i) if (kCurves[i].type == type && kCurves[i].p1 == p1 && (type != 2 || kCurves[i].p2 == p2)) return i;
     return -1;
 }
 float curveAt(int id, float s) {  // no libm: control rate
     if (id <= 0) return s >= 1023.f ? 1024.f : s;
-    const float* y = kCurves[id].y;
-    int i = 1; while (i < 16 && s > kCurveS[i]) ++i;
-    const float u = (s - kCurveS[i - 1]) / (kCurveS[i] - kCurveS[i - 1]);
-    return y[i - 1] + (y[i] - y[i - 1]) * (u < 0 ? 0 : u > 1 ? 1 : u);
+    const int16_t* y = kCurves[id].y;
+    // the wheel value at or below s (the 7-bit map's inverse), then straight to the next
+    const float t = s <= 512.f ? s * 0.125f : 64.f + (s - 512.f) * (63.f / 512);
+    int v = t < 0 ? 0 : t > 126 ? 126 : int(t);
+    if (v < 126 && s >= curveKnot(v + 1)) ++v;
+    const float x0 = curveKnot(v), u = (s - x0) / (curveKnot(v + 1) - x0);
+    return float(y[v]) + float(y[v + 1] - y[v]) * (u < 0 ? 0 : u > 1 ? 1 : u);
 }
 
 // Each destination's span (raw steps at a full box) and raw range (va-round3 R1: the box law; the spans are the
