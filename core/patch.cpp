@@ -304,7 +304,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         if (satIndex(q[flt(f, Filter1FilterSaturatorDrive)]) < 0) g.add(flt(f, Filter1FilterSaturatorDrive), "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
         else if (!f && q[Filter1FilterSaturatorDrive] && q[Filter2FilterType] && !highPassAsGain(q))
             g.add(Filter1FilterSaturatorDrive, "filter 1's saturator with filter 2 a filter: the saturators run after both filters, so not built");
-        g.need(q, flt(f, Filter1FilterOutLevel), 64, 64, "filter out level: no measured law");
+        if (f) g.need(q, Filter2FilterOutLevel, 64, 64, "filter out level: no measured law");  // filter 1's: measured (laws.cpp)
         g.need(q, flt(f, Filter1FilterSaturatorDriveVelocitySensitivity), 256, 256, "saturator velocity sensitivity: not built");
         g.need(q, flt(f, Filter1FilterResonanceVelocitySensitivity), 256, 256, "resonance velocity sensitivity: measured at velocities 1 and 127 only");
     }

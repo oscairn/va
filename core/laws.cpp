@@ -604,8 +604,10 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     }
     for (int k = 0; k < 8; ++k) s.knob[k] = float(q[Param(PartAssignableKnob1Value + k)]) / 1023.f;
 
-    // Level: amplitude level law (dB), filter out level 0.375 dB a step about 64, calibration.
-    double db = at(kAmpLevel, float(q[AmplitudeLevel])) + (q[Filter1FilterOutLevel] - 64) * 0.375 + kCalibrationDb;
+    // Level: amplitude level law (dB), filter 1's out level, calibration. The out level: 6.0206 / 16 dB a step about 64 (va-coverage-2026-11-22
+    // I: a sine through LPF24 at 1023 at 32-96, LPF12 and thru at 32 / 64 / 96: 0.37626 dB a step within 0.002 dB at every value, every type
+    // alike; 0.375 before, 0.04 dB under it at 32 and 96)
+    double db = at(kAmpLevel, float(q[AmplitudeLevel])) + (q[Filter1FilterOutLevel] - 64) * (6.0206 / 16) + kCalibrationDb;
     if (highPassAsGain(q)) {
         const int k = q[Filter2FilterType] - 5;
         db += at(Law{kHpTabX[k], kHpTabY[k], kHpTabN[k], 0, 0}, float(12 * std::log2(filterFc(q[Filter2FilterCutoff]))));

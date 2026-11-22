@@ -1236,6 +1236,29 @@ static void testKeyFollow() {
     CHECK(notCovered(q, g, 64) == 0);
 }
 
+// Filter 1's out level (va-coverage-2026-11-22 I: a sine through LPF24 at 1023, LPF12 and thru, against out level 64): 32 / 48 / 80 / 96
+// -> -12.041 / -6.021 / +6.020 / +12.041 dB (thru 96: +12.045); covered at any value on filter 1.
+static void testOutLevel() {
+    auto level = [](int type, int out) {
+        Patch p; char e[300];
+        readPatch(("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Filter2FilterType=0 Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 "
+                   "Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 AmplitudeLevel=200 Filter1FilterCutoff=1023 Filter1FilterResonance=0 Filter1FilterType=" + std::to_string(type) +
+                   " Filter1FilterOutLevel=" + std::to_string(out)).c_str(), p, e, sizeof e);
+        auto c = std::make_unique<Core>(); c->prepare(48000); c->load(0, p); c->setGain(0, 1, 0); c->noteOn(0, 0, 0, 60, 0.8f);
+        std::vector<float> l(24000), r(24000); c->render(l.data(), r.data(), 24000);
+        double e2 = 0; for (size_t i = 12000; i < l.size(); ++i) e2 += double(l[i]) * l[i];
+        return 10 * std::log10(e2 + 1e-30);
+    };
+    const struct { int type, out; double db; } pts[] = {{1, 32, -12.041}, {1, 48, -6.021}, {1, 80, 6.020}, {1, 96, 12.041}, {3, 32, -12.041}, {0, 96, 12.045}};
+    for (const auto& t : pts) {
+        const double d = level(t.type, t.out) - level(t.type, 64);
+        std::printf("filter 1 type %d out level %d: %+.3f dB (reference %+.3f)\n", t.type, t.out, d, t.db);
+        CHECK(std::fabs(d - t.db) < 0.01);
+    }
+    Gap g[64]; Patch q; q.set(Filter1FilterOutLevel, 80);
+    CHECK(notCovered(q, g, 64) == 0);
+}
+
 static void testSaturators() {
     const std::string sine = "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=1023 ";
     double h0[2], h[2];
@@ -1308,7 +1331,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPanBox(); testKeyFollow(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPanBox(); testKeyFollow(); testOutLevel(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }
