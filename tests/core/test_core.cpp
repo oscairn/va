@@ -636,11 +636,18 @@ static void testPitchDepthKnots() {
 static void testCurves() {
     const struct { int type, p1, p2; long sum; } published[] = {
         {0, 0, 0, 121352}, {0, 1, 0, 109136}, {0, 2, 0, 97497}, {0, 3, 0, 88232}, {0, 4, 0, 77913}, {0, 6, 0, 52733}, {0, 7, 0, 42455},
-        {0, 8, 0, 33265}, {0, 9, 0, 21722}, {0, 10, 0, 9633}, {1, 2, 0, 76181}, {2, 0, 2, 113591}, {2, 0, 3, 105362}, {2, 0, 4, 97134},
-        {2, 6, 1, 52665}, {2, 6, 2, 52593}, {2, 7, 3, 44619}, {2, 8, 1, 27065}, {2, 8, 2, 30082}, {2, 8, 3, 38238}, {2, 8, 4, 46392},
-        {2, 9, 3, 31864}, {2, 10, 1, 9180}, {2, 10, 2, 17335}, {2, 10, 4, 33646}, {3, 1, 0, -119685}, {3, 2, 0, -114253},
-        {3, 5, 0, -94336}, {3, 6, 0, -95326}, {3, 7, 0, -96053}, {9, 0, 0, 66393}, {10, 0, 0, 65116}, {17, 0, 0, 0}, {18, 4, 0, 83552},
-        {19, 2, 0, 65152}};
+        {0, 8, 0, 33265}, {0, 9, 0, 21722}, {0, 10, 0, 9633}, {1, 0, 0, 81977}, {1, 2, 0, 76181}, {1, 3, 0, 72668}, {1, 4, 0, 69063},
+        {1, 6, 0, 61567}, {1, 7, 0, 57973}, {2, 0, 2, 113591}, {2, 0, 3, 105362}, {2, 0, 4, 97134}, {2, 1, 2, 107159},
+        {2, 2, 0, 104448}, {2, 2, 1, 103865}, {2, 2, 2, 100738}, {2, 2, 3, 92510}, {2, 3, 1, 91064}, {2, 4, 1, 78265},
+        {2, 5, 1, 65464}, {2, 5, 2, 65392}, {2, 5, 4, 65249}, {2, 6, 1, 52665}, {2, 6, 2, 52593}, {2, 6, 3, 52521}, {2, 6, 4, 59133},
+        {2, 7, 2, 39792}, {2, 7, 3, 44619}, {2, 8, 1, 27065}, {2, 8, 2, 30082}, {2, 8, 3, 38238}, {2, 8, 4, 46392}, {2, 9, 1, 15552},
+        {2, 9, 2, 23708}, {2, 9, 3, 31864}, {2, 9, 4, 40019}, {2, 10, 1, 9180}, {2, 10, 2, 17335}, {2, 10, 3, 25490},
+        {2, 10, 4, 33646}, {3, 1, 0, -119685}, {3, 2, 0, -114253}, {3, 4, 0, -101574}, {3, 5, 0, -94336}, {3, 6, 0, -95326},
+        {3, 7, 0, -96053}, {4, 0, 0, -54046}, {4, 2, 0, -7446}, {4, 6, 0, 75917}, {4, 7, 0, 86689}, {4, 8, 0, 97965}, {4, 9, 0, 108838},
+        {9, 0, 0, 66393}, {10, 0, 0, 65116}, {10, 12, 0, -65184}, {11, 1, 0, 11264}, {11, 8, 0, 10240}, {14, 0, 0, -44930},
+        {15, 0, 0, 67285}, {16, 2, 0, -108110}, {16, 3, 0, -106815}, {16, 4, 0, -99736}, {16, 6, 0, -91252}, {16, 7, 0, -86389},
+        {16, 8, 0, -79372}, {16, 9, 0, -72416}, {16, 10, 0, -68537}, {17, 0, 0, 0}, {18, 4, 0, 83552}, {18, 7, 0, 43916},
+        {18, 8, 0, 27333}, {19, 0, 0, 65024}, {19, 1, 0, 65024}, {19, 2, 0, 65152}};
     CHECK(sizeof published / sizeof published[0] == kCurveCount - 1);
     for (const auto& c : published) {
         const int id = findCurve(0, c.type, c.p1, c.p2);
@@ -655,11 +662,18 @@ static void testCurves() {
     CHECK(at(3, 1, 0, 8) == -367 && at(3, 1, 0, 32) == -1024 && at(3, 1, 0, 127) == -1024);
     CHECK(at(10, 0, 0, 0) == 0 && at(10, 0, 0, 64) == 1024 && at(10, 0, 0, 120) == 103);
     CHECK(at(18, 4, 0, 16) == 341 && at(18, 4, 0, 31) == 341 && at(18, 4, 0, 32) == 541 && at(17, 0, 0, 100) == 0);
+    // measured later: a jagged one, a window, a triangle, a falling one whose top is 0, one flattening at about half, a ramp
+    CHECK(at(16, 9, 0, 8) == -244 && at(16, 9, 0, 16) == -920 && at(16, 9, 0, 24) == -220 && at(16, 9, 0, 64) == -318);
+    CHECK(at(11, 1, 0, 10) == 0 && at(11, 1, 0, 11) == 1024 && at(11, 1, 0, 21) == 1024 && at(11, 1, 0, 22) == 0);
+    CHECK(at(14, 0, 0, 32) == -261 && at(14, 0, 0, 63) == -1024 && at(14, 0, 0, 64) == -1024 && at(14, 0, 0, 96) == -261);
+    CHECK(at(4, 0, 0, 64) == -424 && at(4, 0, 0, 126) == -1017 && at(4, 0, 0, 127) == 0);
+    CHECK(at(15, 0, 0, 1) == 242 && at(15, 0, 0, 64) == 548 && at(15, 0, 0, 127) == 552);
+    CHECK(at(2, 3, 1, 0) == 0 && at(2, 3, 1, 32) == 304 && at(2, 3, 1, 48) == 812 && at(2, 3, 1, 64) == 1024);
     CHECK(findCurve(0, 3, 1, 7) == findCurve(0, 3, 1, 0));  // parameter 2 counts for type 2 only
     const int i = findCurve(0, 0, 8, 0);  // halfway between the wheel's 64 and 65
     CHECK(std::fabs(curveAt(i, (curveKnot(64) + curveKnot(65)) / 2) - (curveAt(i, curveKnot(64)) + curveAt(i, curveKnot(65))) / 2) < 1e-3f);
     CHECK(curveAt(0, 0) == 0 && curveAt(0, 516.5f) == 516.5f && curveAt(0, 1022) == 1022 && curveAt(0, 1023) == 1024);  // linear
-    CHECK(findCurve(0, 16, 9, 0) < 0 && findCurve(0, 2, 3, 1) < 0 && findCurve(1, 0, 8, 0) < 0);  // not measured
+    CHECK(findCurve(0, 5, 0, 0) < 0 && findCurve(0, 2, 1, 1) < 0 && findCurve(1, 0, 8, 0) < 0);  // not measured
     Gap g[64];
     Patch p = plain(); p.set(Box3ControllerSetSwitch, 1); p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetPolarity, 0); p.set(Box3ControllerSetRatio, 136);
     p.set(Filter2FilterControllerBox3Switch, 0); p.set(Filter1FilterResonance, 0);
@@ -671,7 +685,7 @@ static void testCurves() {
     CHECK(notCovered(p, g, 64) == 0);
     p.set(PartAssignableKnob1Value, 516);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetCurveType);
-    p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetCurveType, 16); p.set(Box3ControllerSetCurveParameter1, 9);
+    p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetCurveType, 5); p.set(Box3ControllerSetCurveParameter1, 0);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetCurveType);
 }
 

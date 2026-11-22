@@ -54,7 +54,7 @@ extern const DestDef kDestDefs[kDests];
 const float* waveTable(int wave, bool square);
 // Curves with a measured law (laws.cpp): 0 linear; the others by their values at the mod wheel's 128 values, at curveKnot.
 struct CurveDef { uint8_t type, p1, p2; int16_t y[128]; };
-constexpr int kCurveCount = 36;
+constexpr int kCurveCount = 82;
 extern const CurveDef kCurves[kCurveCount];
 float curveKnot(int v);  // the mod wheel's value v (0-127) as a box source
 int findCurve(int bank, int type, int p1, int p2);  // -1: not measured

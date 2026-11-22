@@ -291,7 +291,7 @@ Read by the voices (float, 41 levels of 2049 samples, a level 8.2 KB; two adjace
 | sine (any oscillator) | one level | 8.2 KB |
 | a third oscillator | its wave's set (probe A + a sine: 680 KB) | as its wave |
 | the LFOs | none (computed) | 0 |
-| controller boxes | the laws at every raw value (`LawTables`, built once per process) and the curves' values at the mod wheel's 128 values (a box reads two neighboring ones), read once per sound a step | 17.9 KB + 9.1 KB |
+| controller boxes | the laws at every raw value (`LawTables`, built once per process) and the curves' values at the mod wheel's 128 values (a box reads two neighboring ones), read once per sound a step | 17.9 KB + 20.8 KB |
 | filters (round 5) | per voice a control step: the resonance's gain (1 KB) and a high-pass's gain by semitone (0.7 KB a type); the cutoff law (4 KB, part of `LawTables`) once per sound a step with boxes; per sound 1 KB of velocity tables | 1.7 KB read a voice |
 
 A voice touches two adjacent levels of a set (16 KB) per oscillator; which ones moves with its pitch.

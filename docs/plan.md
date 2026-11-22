@@ -48,7 +48,7 @@ parameter id.
 | `Filter1FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 188 | 272 | yes | partly done (0.11.5): every drive measured; built 0-32 (past it the gain moves with the level) |
 | `PartKeyControllerSet1Switch`: key controller boxes: not built | 164 | 220 | yes | open |
 | `Filter1FilterResonance`: resonance at high cutoffs: the fit misses by over 1 dB there (any value to 2.1 kHz, LPF24 0.7 kHz; to 64 up to 5.9 / 2.1 kHz; 32 anywhere) | 162 | 208 | yes | open |
-| `BoxN ControllerSetCurveType`: controller box curve: not measured | 135 | 184 | yes | partly done (0.11.4): 35 preset curves measured at the mod wheel's 128 values; counted again with the engine's report on the stock set read through the converter, 60 parts (49 Performances) on curves still not measured (fully covered parts 3 to 4) |
+| `BoxN ControllerSetCurveType`: controller box curve: not measured | 135 | 184 | yes | partly done (0.11.4): 35 preset curves measured at the mod wheel's 128 values; counted again with the engine's report on the stock set read through the converter, 60 parts (49 Performances) on curves still not measured (fully covered parts 3 to 4); 0.11.6: 46 more measured, not counted again |
 | `AmplitudeSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 115 | 194 | yes | partly done (0.11.5): every drive measured; built 0-32 |
 | `Filter1FilterOutLevel`: filter out level: no measured law | 106 | 134 | yes | done (0.11.5): 6.0206 / 16 dB a step, every type alike (filter 2's still reported) |
 | `Ageing`: aging: no effect on the drift (0-200 at drift 0, 100-200 at drift 64 and 100); with a release under 100 it moves the voices' spread of release times, not built | 105 | 157 | yes | open |
