@@ -16,11 +16,11 @@ comparison with the reference: [acceptance.md](acceptance.md); cost: [cost.md](c
 | Area | Played today | Not yet (reported, not approximated) |
 |---|---|---|
 | Oscillators | three oscillators, all five waves; octave and pitch; pitch LFO depth; pulse width on oscillators 1 and 2 with its LFO; out level 90-511; unison with detune and spread; voltage drift | oscillator FM, ring, self sync and wave shaper; oscillator pitch and pulse width envelopes; velocity sensitivities of the oscillator levels; oscillator 3's pulse width other than 128; out select and invert; oscillator reset modes; the noise generator |
-| Filters | two filters: low-pass 24/18/12/6, high-pass 24/18/12/6 and thru; cutoff 0-1023; key follow; cutoff velocity; envelope depth 96-448; LFO depth; resonance where the cutoff stays under 2.1 kHz; saturator drive at nine values | band-pass types; resonance at high cutoffs; filter out level other than 64; saturator velocity sensitivity |
+| Filters | two filters: low-pass 24/18/12/6, high-pass 24/18/12/6 and thru; cutoff 0-1023; key follow; cutoff velocity; envelope depth 96-448; LFO depth; resonance where the cutoff stays under 2.1 kHz; filter 1's out level; saturator drive 0-32 | band-pass types; resonance at high cutoffs; filter 2's out level other than 64; saturator drive past 32; saturator velocity sensitivity |
 | Envelopes | filter and amplitude envelopes (decay law over 100-255, filter release over 55-255) | pitch envelope depth; envelope time velocity sensitivity |
 | LFOs | pitch LFO (speed 0-320); the filter LFO shares its block; amplitude LFO with the sine | audio-rate LFO speeds; the amplitude LFO's other waves, phase, delay and fade in; the part LFO with any depth |
-| Level | amplitude level 56-511; amplitude LFO depth | level velocity sensitivity other than neutral; level key follow; part detune |
-| Modulation | 16 controller boxes, sources 0-3 and 6-17 (foot controller 2 and the foot switch as plugin parameters), the box destinations as modulatable parameters ([parameters.md](parameters.md)); knobs 1-8, ribbon and switches 1-2 as parameters | other box destinations; sequenced and envelope-following sources; unmeasured curves; Key Controller Sets |
+| Level | amplitude level 56-511; amplitude LFO depth; level velocity sensitivity to 128 steps either way and at 192; level key follow | level velocity sensitivity past 128 steps (but 192); the velocity curve's depth and offset; part detune |
+| Modulation | 16 controller boxes, sources 0-3 and 6-17 (foot controller 2 and the foot switch as plugin parameters), the box destinations as modulatable parameters ([parameters.md](parameters.md)), among them the part's pitch, every LFO's speed, the amplitude LFO's depth, the unison detune and spread, mono/poly and the pan (a balance); knobs 1-8, ribbon and switches 1-2 as parameters | other box destinations (the saturator drive, the pulse width LFO depth; effect, send and arpeggio destinations are the host's); sequenced and envelope-following sources; unmeasured curves; Key Controller Sets |
 | Voices | mono and poly, key assign, portamento (switch, time, mode, time mode), pitch bend range, note shift, zone limits and transposes, polyphony limit | legato slope other than 0; part envelope and resonance offsets; key-on delay; pan modulation (random, alternate, scaling); micro tuning |
 | Modifier | wave folder only at its neutral depth | the wave folder |
 | Outputs | an output bus per sound (main or sound bus 1-8) | - |
@@ -28,6 +28,8 @@ comparison with the reference: [acceptance.md](acceptance.md); cost: [cost.md](c
 ## 3. Coverage
 
 Measured with VA 0.11.1 on 2026-11-17. Two sets of Performances of the reference were converted: its factory (stock) set of 3631 Performances and a personal library of 87 Performances. "Fully covered": the engine's own coverage report lists nothing for that part that the engine does not play; it says nothing about effects, controls, scenes or sequences. "Best effort": the part plays, with at least one item reported. Neither set has a Performance with no sound-affecting drop yet (0 of 3631, 0 of 87): every Performance still needs work somewhere, in this plugin or elsewhere.
+
+Counted again on 2026-11-21 with the engine's own report on the stock set read through the converter (no conversion): 4 of 814 parts fully covered at 0.11.4, **9 at 0.11.5**. The personal library was not counted again.
 
 | Parts on this engine | Total | Fully covered | Best effort | Muted |
 |---|---|---|---|---|
