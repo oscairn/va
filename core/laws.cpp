@@ -206,6 +206,30 @@ double filterFc(int c) {  // log-frequency between the knots
 int satIndex(int drive) { for (int i = 0; i < 9; ++i) if (kSatDrive[i] == drive) return i; return -1; }
 double cutoffHz(int raw) { return filterFc(std::max(0, std::min(1023, raw))); }
 namespace {
+// Amplitude level velocity sensitivity (va-coverage-2026-11-22 G: a sine at key 60, 12 velocities at each of 14 sensitivities; the same
+// dB at amplitude levels 200, 400 and 511): the gain is the amplitude level law's at x = 511 - c u against its value at 511, u = 127 -
+// velocity for a positive sensitivity s (raw - 256), the velocity for a negative one: velocity 127 (positive) or 0 (negative) is the
+// level. c by |s|, fitted per sensitivity (each within 0.10 dB of its readings down to 40 dB under the level; s / 32 to 128, 8 at 192).
+// Under the level law's 56 this group's own readings: x 35 / 31 -> -49.07 / -51.22 dB; at 3 and under silent; linear gain between 3 and 31
+// (not measured). Coverage: |s| to 128 and 192.
+constexpr float kVelSensX[] = {0, 8, 16, 32, 64, 96, 128, 192};
+constexpr float kVelSensPos[] = {0, 0.2505f, 0.5015f, 1.012f, 2.0135f, 3.02f, 4.0305f, 8.102f};
+constexpr float kVelSensNeg[] = {0, 0.25f, 0.5005f, 1.0f, 2.007f, 3.012f, 4.017f, 7.9885f};  // 8, 32, 96: between the measured 16, 64, 128
+constexpr float kVelLowX[] = {31, 35, 56}, kVelLowDb[] = {-51.22f, -49.07f, -39.3058f};  // 56: the level law's lowest knot
+void ampVelocityLaw(Sound& s, int sens) {
+    const Law c{kVelSensX, sens > 0 ? kVelSensPos : kVelSensNeg, 8, 0, 192};
+    const double top = at(kAmpLevel, 511), k = at(c, float(std::abs(sens)));
+    for (int v = 0; v < 128; ++v) {
+        const double x = 511 - k * (sens > 0 ? 127 - v : sens < 0 ? v : 0);
+        double g;
+        if (x >= 56) g = std::pow(10.0, (at(kAmpLevel, float(x)) - top) / 20);
+        else if (x >= 31) g = std::pow(10.0, (at(Law{kVelLowX, kVelLowDb, 3, 31, 56}, float(x)) - top) / 20);
+        else if (x > 3) g = std::pow(10.0, (kVelLowDb[0] - top) / 20) * (x - 3) / 28;
+        else g = 0;
+        s.velAmp[v] = float(g);
+    }
+}
+
 void velocityLaws(Sound& s, int f, int cut, int feg, int res) {
     for (int v = 0; v < 128; ++v) {
         const float vc = float(cut < 0 ? 128 - v : v), vf = float(feg < 0 ? 128 - v : v);
@@ -448,6 +472,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     s.lfoSpeed[0] = int16_t(q[FilterCutoffLFOSpeed]); s.lfoSpeed[1] = int16_t(q[AmplitudeLFOSpeed]);
     s.lfoSpeed[2] = int16_t(q[Osc1OscillatorLFOSpeed]); s.lfoSpeed[3] = int16_t(q[Osc2OscillatorLFOSpeed]);
     unisonLaws(s, q);
+    ampVelocityLaw(s, q[AmplitudeLevelVelocitySensitivity] - 256);
     s.porta = q[PortamentoMaster] && q[PartPortamentoSwitch];
     s.portaFull = q[PartPortamentoMode] != 0;
     s.portaTimeMode = uint8_t(q[PartPortamentoTimeMode]);

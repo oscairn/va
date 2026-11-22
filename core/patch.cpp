@@ -314,7 +314,8 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
     if (t1 && r.lo[DFegRelease] < 55) g.add(FilterCutoffEGReleaseTime, "release (with its boxes): law measured 55-255");
     g.need(q, FilterCutoffEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
     g.need(q, AmplitudeLevel, 56, 511, "amplitude level: law measured 56-511");
-    g.need(q, AmplitudeLevelVelocitySensitivity, 256, 256, "velocity sensitivity: measured only at 0 (no effect)");
+    if (std::abs(q[AmplitudeLevelVelocitySensitivity] - 256) > 128 && std::abs(q[AmplitudeLevelVelocitySensitivity] - 256) != 192)
+        g.add(AmplitudeLevelVelocitySensitivity, "velocity sensitivity: law measured to 128 steps either way and at 192");
     // LFOs: speeds above 320 (108 Hz) are audio rate, which the control-rate LFO does not reproduce
     const PlanDesc d = describe(q);
     if (d.lfo[0]) {

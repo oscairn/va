@@ -1160,6 +1160,33 @@ static void testWaveBox() {
 // The saturators against the reference (va-round7 X1: a 65.4 Hz sine through LPF24 at 1023): the fundamental's gain over drive 0
 // and the 2nd harmonic against the fundamental, filter 1 at drives 7 / 15 / 23 (+1.07 / +1.07 / +0.73 dB, -56.5 / -50.8 / -44.7 dB),
 // filter 2 at 15 (as filter 1's), the amplitude saturator at 8 (+0.61 dB, -59.7 dB). A drive not measured is reported.
+// Amplitude level velocity sensitivity (va-coverage-2026-11-22 G: a sine at key 60, the level at each velocity against the same sound at
+// sensitivity 0): the reference's readings at four sensitivities, and the coverage limit (128 steps either way, and 192).
+static void testVelocitySensitivity() {
+    auto level = [](int sens, int vel) {
+        Patch p; char e[300];
+        readPatch(("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 AmplitudeEGAttackTime=0 Filter1FilterType=0 Filter2FilterType=0 "
+                   "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 AmplitudeLevel=400 AmplitudeLevelVelocitySensitivity=" +
+                   std::to_string(sens)).c_str(), p, e, sizeof e);
+        auto c = std::make_unique<Core>(); c->prepare(48000); c->load(0, p); c->setGain(0, 1, 0); c->noteOn(0, 0, 0, 60, float(vel) / 127);
+        std::vector<float> l(24000), r(24000); c->render(l.data(), r.data(), 24000);
+        double e2 = 0; for (size_t i = 12000; i < l.size(); ++i) e2 += double(l[i]) * l[i];
+        return 10 * std::log10(e2 + 1e-30);
+    };
+    const double ref = level(256, 100);
+    const struct { int sens, vel; double db; } pts[] = {{320, 1, -11.90}, {320, 64, -4.99}, {320, 127, 0.0}, {264, 1, -1.10}, {128, 64, -12.05},
+                                                        {128, 1, -0.14}, {448, 100, -9.71}, {448, 120, -2.04}, {64, 16, -5.00}, {352, 32, -14.35}};
+    for (const auto& t : pts) {
+        const double d = level(t.sens, t.vel) - ref;
+        std::printf("velocity sensitivity %+d, velocity %d: %+.2f dB (reference %+.2f)\n", t.sens - 256, t.vel, d, t.db);
+        CHECK(std::fabs(d - t.db) < 0.15);
+    }
+    CHECK(level(256, 1) - ref == 0);
+    Gap g[64]; Patch q;
+    for (int sv : {256 + 128, 256 - 128, 256 + 192, 256 - 192, 300}) { q.set(AmplitudeLevelVelocitySensitivity, sv); CHECK(notCovered(q, g, 64) == 0); }
+    for (int sv : {256 + 129, 256 - 160, 511, 1}) { q.set(AmplitudeLevelVelocitySensitivity, sv); CHECK(notCovered(q, g, 64) == 1 && g[0].param == AmplitudeLevelVelocitySensitivity); }
+}
+
 static void testSaturators() {
     const std::string sine = "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=1023 ";
     double h0[2], h[2];
@@ -1232,7 +1259,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }

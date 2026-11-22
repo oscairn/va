@@ -102,6 +102,7 @@ struct Sound {
     struct Filter { uint8_t type = 0; float cut = 0, feg = 0, res = 0, keyFollow = 0; };
     Filter flt[2];
     int16_t velCut[2][128] = {};
+    float velAmp[128] = {};  // the amplitude's gain at each velocity (laws.cpp ampVelocityLaw)
     int8_t velRes[2][128] = {};
     uint8_t velFeg[2][128] = {};  // the EG depth factor x 128
     float rateRatio = 1;    // 44100 / the prepared rate: the filters' poles are the reference's at 44.1 kHz (1: no mapping)
@@ -153,7 +154,7 @@ enum Field {
     GL, DGL, GR, DGR,
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
-    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, SDC, UC,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, VELG, FADE, DFADE, FRESH, SATC, SDC, UC,
     QEND,  // released: the amplitude envelope level at or under which the note's output gain is below -96 dBFS (0: none; the end test only)
     NFIELDS
 };
