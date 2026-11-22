@@ -236,6 +236,16 @@ void ampVelocityLaw(Sound& s, int sens) {
     }
 }
 
+// Amplitude level key follow (va-coverage-2026-11-22 H: a sine at keys 24-108 at key follow 0, 8, 16, 32, 48, 64, 96, 127, amplitude level
+// 400, read against key follow 0 at each key): dB = -slope (key - 60), linear in the key (within 0.02 dB), the slope a knot table of the key
+// follow (dB a key); a raise stops at the amplitude level's top (511: +4.256 dB over 400 at every key follow that reaches it; measured at
+// level 400 only).
+constexpr float kKeyAmpX[] = {0, 8, 16, 32, 64, 96, 127}, kKeyAmpSlope[] = {0, 0.03129f, 0.06263f, 0.12538f, 0.2508f, 0.37617f, 0.5019f};
+void ampKeyLaw(Sound& s, int follow, int level) {
+    const double slope = at(Law{kKeyAmpX, kKeyAmpSlope, 7, 0, 127}, float(follow)), top = at(kAmpLevel, 511) - at(kAmpLevel, float(level));
+    for (int k = 0; k < 128; ++k) s.keyAmp[k] = float(std::pow(10.0, std::min(top, -slope * (k - 60)) / 20));
+}
+
 void velocityLaws(Sound& s, int f, int cut, int feg, int res) {
     for (int v = 0; v < 128; ++v) {
         const float vc = float(cut < 0 ? 128 - v : v), vf = float(feg < 0 ? 128 - v : v);
@@ -481,6 +491,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     s.lfoSpeed[2] = int16_t(q[Osc1OscillatorLFOSpeed]); s.lfoSpeed[3] = int16_t(q[Osc2OscillatorLFOSpeed]);
     unisonLaws(s, q);
     ampVelocityLaw(s, q[AmplitudeLevelVelocitySensitivity] - 256);
+    ampKeyLaw(s, q[AmplitudeLevelKeyFollow], q[AmplitudeLevel]);
     s.porta = q[PortamentoMaster] && q[PartPortamentoSwitch];
     s.portaFull = q[PartPortamentoMode] != 0;
     s.portaTimeMode = uint8_t(q[PartPortamentoTimeMode]);

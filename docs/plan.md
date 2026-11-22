@@ -50,7 +50,7 @@ parameter id.
 | `AmplitudeSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 115 | 194 | yes | open |
 | `Filter1FilterOutLevel`: filter out level: no measured law | 106 | 134 | yes | open |
 | `Ageing`: aging: no effect on the drift (0-200 at drift 0, 100-200 at drift 64 and 100); with a release under 100 it moves the voices' spread of release times, not built | 105 | 157 | yes | open |
-| `AmplitudeLevelKeyFollow`: amplitude key follow: no measured law | 105 | 152 | yes | open |
+| `AmplitudeLevelKeyFollow`: amplitude key follow: no measured law | 105 | 152 | yes | done (0.11.5): measured at eight values over keys 24-108; played |
 | `FilterCutoffLFOWave`: filter LFO wave: only the sine verified on the filter LFO | 101 | 127 | yes | open |
 | `RandomPanDepth`: pan modulation: not built | 94 | 119 | yes | open |
 | `NoiseGeneratorOutLevel`: noise: out of scope | 88 | 145 | yes | open |

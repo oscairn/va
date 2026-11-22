@@ -103,6 +103,7 @@ struct Sound {
     Filter flt[2];
     int16_t velCut[2][128] = {};
     float velAmp[128] = {};  // the amplitude's gain at each velocity (laws.cpp ampVelocityLaw)
+    float keyAmp[128] = {};  // and at each key (ampKeyLaw)
     int8_t velRes[2][128] = {};
     uint8_t velFeg[2][128] = {};  // the EG depth factor x 128
     float rateRatio = 1;    // 44100 / the prepared rate: the filters' poles are the reference's at 44.1 kHz (1: no mapping)

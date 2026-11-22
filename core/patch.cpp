@@ -347,7 +347,6 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         g.need(q, AmplitudeLFODelayTime, 0, 0, "amplitude LFO delay: not measured");
         g.need(q, AmplitudeLFOFadeInTime, 0, 0, "amplitude LFO fade-in: not measured");
     }
-    g.need(q, AmplitudeLevelKeyFollow, 0, 0, "amplitude key follow: no measured law");
     if (satIndex(q[AmplitudeSaturatorDrive]) < 0) g.add(AmplitudeSaturatorDrive, "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
     if (r.lo[DAmpDecay] < 100) g.add(AmplitudeEGDecayTime, "decay (with its boxes): law measured 100-255");
     g.need(q, AmplitudeEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");

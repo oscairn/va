@@ -667,6 +667,7 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
     if (!monoNow) for (uint32_t i = 0; i < p.n; ++i) keyHeld |= p.f[ASTG][i] < kStageRelease && p.f[DFADE][i] == 0.f;
     const float from = pitchNow_(si);
     const int vi = int(vel * 127.f + 0.5f) < 0 ? 0 : int(vel * 127.f + 0.5f) > 127 ? 127 : int(vel * 127.f + 0.5f);
+    const int kc = key < 0 ? 0 : key > 127 ? 127 : key;
     if (take >= 0) {
         const uint32_t u = p.voice[take];
         const bool uHeld = monoNow ? nheld_[si] && held_[si][nheld_[si] - 1].voice == u : p.f[ASTG][take] < kStageRelease;
@@ -676,7 +677,7 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
             if (p.voice[i] != u) continue;
             p.voice[i] = uint8_t(v); p.channel[i] = uint8_t(ch & 15);
             p.f[KEY][i] = k; p.f[GOFF][i] = 0;
-            if (!(monoNow && s.porta && keyHeld)) { retrigger_(si, i); p.f[VELG][i] = s.velAmp[vi]; }  // legato only in mono with portamento, a key held (it keeps its level)
+            if (!(monoNow && s.porta && keyHeld)) { retrigger_(si, i); p.f[VELG][i] = s.velAmp[vi] * s.keyAmp[kc]; }  // legato only in mono with portamento, a key held (it keeps its level)
             if (s.porta && (s.portaFull || keyHeld)) glide_(si, i, from);
         }
         slot_[v] = {int8_t(si), uint8_t(take), false, 0, 0};
@@ -708,7 +709,7 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
                 p.f[DS3][i] = s.driftMean + (rnd() * 2 - 1) * s.driftStatic;
                 p.f[DA3][i] = rnd() * 2 - 1; p.f[DB3][i] = rnd() * 2 - 1; p.f[DP3][i] = rnd();
             }
-            p.f[VELG][i] = s.velAmp[vi];
+            p.f[VELG][i] = s.velAmp[vi] * s.keyAmp[kc];  // the note's level by its velocity and key
             p.f[DCUT][i] = s.driftCutMean + (rnd() * 2 - 1) * s.driftCutSpread;
             for (int f = 0; f < 2; ++f) {  // key follow from key 60 (the played key; with a zone or part shift not measured) and velocity, semitones
                 p.f[f ? DCUT2 : DCUT][i] += s.flt[f].keyFollow * float(key - 60) + float(s.velCut[f][vi]) * 0.125f;

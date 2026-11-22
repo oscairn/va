@@ -1213,6 +1213,29 @@ static void testPanBox() {
     CHECK(notCovered(q, g, 64) == 0);
 }
 
+// Amplitude level key follow (va-coverage-2026-11-22 H: a sine at amplitude level 400, against key follow 0 at the same key): linear in
+// the key from key 60, the slope by the key follow; a raise stops at the level's top (+4.256 dB over 400).
+static void testKeyFollow() {
+    auto level = [](int follow, int key) {
+        Patch p; char e[300];
+        readPatch(("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Filter1FilterType=0 Filter2FilterType=0 Osc1OscillatorWave=4 "
+                   "Osc1OscillatorOutLevel=511 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 AmplitudeLevel=400 AmplitudeLevelKeyFollow=" + std::to_string(follow)).c_str(), p, e, sizeof e);
+        auto c = std::make_unique<Core>(); c->prepare(48000); c->load(0, p); c->setGain(0, 1, 0); c->noteOn(0, 0, 0, key, 0.8f);
+        std::vector<float> l(24000), r(24000); c->render(l.data(), r.data(), 24000);
+        double e2 = 0; for (size_t i = 12000; i < l.size(); ++i) e2 += double(l[i]) * l[i];
+        return 10 * std::log10(e2 + 1e-30);
+    };
+    const struct { int follow, key; double db; } pts[] = {{8, 24, 1.128}, {8, 108, -1.500}, {16, 96, -2.256}, {64, 84, -6.019}, {127, 96, -18.075},
+                                                          {127, 72, -6.025}, {32, 24, 4.255}, {127, 36, 4.254}, {96, 60, 0.0}};
+    for (const auto& t : pts) {
+        const double d = level(t.follow, t.key) - level(0, t.key);
+        std::printf("key follow %d at key %d: %+.3f dB (reference %+.3f)\n", t.follow, t.key, d, t.db);
+        CHECK(std::fabs(d - t.db) < 0.05);
+    }
+    Gap g[64]; Patch q; q.set(AmplitudeLevelKeyFollow, 127);
+    CHECK(notCovered(q, g, 64) == 0);
+}
+
 static void testSaturators() {
     const std::string sine = "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=1023 ";
     double h0[2], h[2];
@@ -1285,7 +1308,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPanBox(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPanBox(); testKeyFollow(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }
