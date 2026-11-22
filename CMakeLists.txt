@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(oscairn_va VERSION 0.11.3 LANGUAGES C CXX)
+project(oscairn_va VERSION 0.11.4 LANGUAGES C CXX)
 
 # The binary's name (the release stem is NAME in tools/release/release.conf).
 set(VA_NAME oscairn-va)
