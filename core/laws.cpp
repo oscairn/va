@@ -361,6 +361,7 @@ const DestDef kDestDefs[kDests] = {
     // (3600 cents: 36 semitones at a full box)
     {255, 0, 255}, {255, 0, 255}, {192, 64, 448}, {415, 0, 415}, {3600, -3600, 3600}, {3600, -3600, 3600}, {3600, -3600, 3600},
     {127, 0, 127},  // va-round6 A1 / round 7 A2: the portamento time (127 at a full box; a glide follows it: Core::render)
+    {8192, -8192, 8192},  // va-coverage-2026-11-22 A: the part's pitch, a cent an output unit (+-8192 cents at the box sum's limit)
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
     {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
 
@@ -522,6 +523,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestPitchLfoSpeed: aim(DLfoSpeed); break;
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) aim(Dest(DWave1 + n)); break;
         case kDestPorta: if (s.porta) aim(DPorta); break;
+        case kDestPitch: aim(DPitch); break;
         default: break;
         }
         if (s.targets == before) continue;

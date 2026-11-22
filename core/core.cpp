@@ -894,7 +894,7 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
                 c.feg[f] = kFegSemisPerStep * (steps < -192.f ? -192.f : steps > 192.f ? 192.f : steps);
                 c.res[f] = float(raw[dr]);
             }
-            for (int n = 0; n < 3; ++n) c.freq[n] = float(raw[DFreq1 + n]) * 0.01f;
+            for (int n = 0; n < 3; ++n) c.freq[n] = float(raw[DFreq1 + n] + raw[DPitch]) * 0.01f;  // each oscillator's offset and the part's pitch
             c.pwRaw[0] = float(raw[DPw1]); c.pwRaw[1] = float(raw[DPw2]);
             if (raw[DLfoCutDepth] != s.stored[DLfoCutDepth]) c.lfoCut = float(raw[DLfoCutDepth] - 256) * s.lfoCutPerStep;
             for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)

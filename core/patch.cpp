@@ -158,6 +158,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         case kDestPitchLfoSpeed: d[nd++] = DLfoSpeed; break;
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) d[nd++] = Dest(DWave1 + n); break;
         case kDestPorta: if (q[PortamentoMaster] && q[PartPortamentoSwitch]) d[nd++] = DPorta; break;
+        case kDestPitch: d[nd++] = DPitch; break;
         default: g.add(box(b, Box1ControllerSetDestination), unbuiltDest(dest)); continue;
         }
         if (!nd) continue;  // reaches no unit that sounds
@@ -193,7 +194,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
                             q[FilterCutoffEGDecayTime], q[FilterCutoffEGReleaseTime], q[AmplitudeEGAttackTime], q[AmplitudeEGDecayTime],
                             q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth], q[Filter2FilterCutoff], q[Filter2FilterCutoffEGDepth] - 256,
                             q[Filter2FilterResonance], q[Osc1OscillatorPulseWidth], q[Osc2OscillatorPulseWidth], q[Filter1FilterCutoffLFODepth],
-                            q[PitchLFOSpeed], 0, 0, 0, q[PartPortamentoTime], q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
+                            q[PitchLFOSpeed], 0, 0, 0, q[PartPortamentoTime], 0, q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
     for (int d = 0; d < kDests; ++d) {
         auto at = [&](float t) {
             t = t < -8192 ? -8192 : t > 8192 ? 8192 : t;

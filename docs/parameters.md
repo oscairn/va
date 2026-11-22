@@ -17,6 +17,7 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 | 40-42 | Osc 1-3 Wave | none (the raw patch's own parameters) | 0..4, stepped | the model's default; shows the sound's own value | controller box destinations, as ids 14-37 (below); modulatable |
 | 43 | Portamento Time | none (the raw patch's own parameter) | 0..127 | as ids 14-37 | a controller box destination (below); modulatable |
 | 44 | Output Bus | `bus` | 0..8, stepped | 0 | the output port the sound plays on: 0 main, n sound bus n (see [Output ports](#output-ports)); the output bus role |
+| 45 | Pitch (cents) | none (an offset from 0) | -8192..8192 | 0 | a controller box destination (below); modulatable |
 
 The knobs, the ribbon and the switches are what the reference's controller boxes read (box sources 8-15 = knobs 1-8). A change takes
 effect at the next control step of the core (at most 16 frames). Whatever the boxes add, the cutoff stops at the
@@ -29,7 +30,7 @@ values are ids 0-13, then the raw patch, then the Output Bus; a state 4 still lo
 not read). A host never passes the ribbon's or the switches' MIDI controllers
 (CC 16, 86, 87) to a plugin, so they are parameters, as the knobs.
 
-## Controller box destinations (ids 14-37, 40-43)
+## Controller box destinations (ids 14-37, 40-43, 45)
 
 Every destination the core's boxes move is also a parameter, flagged `CLAP_PARAM_IS_MODULATABLE`, so that a converter can map a
 plain source-to-destination box onto the host's control tree with a host-side curve instead of an in-engine box. Its value is
@@ -59,6 +60,7 @@ the sound slot until the host changes it; a modulation for one note (a note id o
 | 35-37 | Osc 1-3 Frequency (cents) | none: an offset from 0 in cents, not saved with the patch (a value event holds until the next sound load) | -3600..3600 | 3600 |
 | 40-42 | Osc 1-3 Wave | `Osc1OscillatorWave`, `Osc2...`, `Osc3...` (the box sum's steps rounded half away from zero, not toward it; the table changes at the next control step; a wave moved where a pulse of a width other than 128 is involved is reported) | 0-4 | 4 |
 | 43 | Portamento Time | `PartPortamentoTime` (a glide under way follows it; in time modes 1 and 3, where the glide's rate is set by its interval at its start, a box on it is reported) | 0-127 | 127 |
+| 45 | Pitch (cents) | none: the part's pitch, an offset from 0 in cents on every oscillator, added to each one's frequency offset; not saved with the patch | -8192..8192 | 8192 |
 
 For a linear box (curve Standard 5) both paths give the same result: the ABI test plays the mod wheel at 127 through a box of
 ratio +8 on the cutoff and a modulation of 127.875 steps, bit for bit the same. In-engine boxes stay for what a host curve does

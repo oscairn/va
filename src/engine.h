@@ -28,19 +28,22 @@ constexpr uint32_t kPorts = kContexts + 1;  // stereo output ports: main and a s
 // follow at the next control step. A sound starts at its patch's own knob values. Ids are stable (docs/parameters.md).
 // ribbon, switch1, switch2: the part's ribbon and switches 1-2 as controller box sources (0..1 as a 7-bit controller's 0..127);
 // kFoot2, kFootSwitch (after the destinations, not saved: performance controllers, as the MIDI ones): foot controller 2 and the
-// foot switch, the same way (a host passes neither's MIDI controller). kBus (last): the output port the sound plays on (0 main,
+// foot switch, the same way (a host passes neither's MIDI controller). kBus: the output port the sound plays on (0 main,
 // n sound bus n), saved with the sound after its raw patch.
 // The parameters before kStateCount are the shell's values (saved in the state's value list). From kDest0 on: the controller
 // box destinations the core moves (vcore::Dest order), in the patch's raw units: a value event sets the destination, a
 // modulation adds raw steps to it with its boxes (docs/parameters.md); their values live in the raw patch.
 enum Param : uint32_t { kLevel, kPan, kPolyphony, kKnob1, kKnob8 = kKnob1 + 7, kRibbon, kSwitch1, kSwitch2, kStateCount,
-                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kPortaTime, kBus, kParamCount };
+                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kPortaTime, kBus, kPitch, kParamCount };
 // A parameter's destination (vcore::Dest; -1: not a destination) and a destination's parameter: ids 14-37, then the oscillators' waves
-// (40-42) and the portamento time (43), added after the foot controls (ids are never renumbered).
+// (40-42) and the portamento time (43), added after the foot controls, and the part's pitch (45), after the output bus (ids are never
+// renumbered).
 constexpr int destOf(uint32_t p) {
-    return p >= kDest0 && p <= kDestLast ? int(p - kDest0) : p >= kWave1 && p <= kWave3 ? int(vcore::DWave1 + (p - kWave1)) : p == kPortaTime ? int(vcore::DPorta) : -1;
+    return p >= kDest0 && p <= kDestLast ? int(p - kDest0) : p >= kWave1 && p <= kWave3 ? int(vcore::DWave1 + (p - kWave1)) : p == kPortaTime ? int(vcore::DPorta) : p == kPitch ? int(vcore::DPitch) : -1;
 }
-constexpr uint32_t paramOf(int d) { return d <= vcore::DFreq3 ? kDest0 + uint32_t(d) : d == vcore::DPorta ? uint32_t(kPortaTime) : kWave1 + uint32_t(d - vcore::DWave1); }
+constexpr uint32_t paramOf(int d) {
+    return d <= vcore::DFreq3 ? kDest0 + uint32_t(d) : d == vcore::DPorta ? uint32_t(kPortaTime) : d == vcore::DPitch ? uint32_t(kPitch) : kWave1 + uint32_t(d - vcore::DWave1);
+}
 struct ParamInfo { const char* name; const char* key; double min, max, def; bool stepped; };
 inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination parameter's raw patch parameter
     vcore::Osc1OscillatorPitchLFODepth, vcore::Osc2OscillatorPitchLFODepth, vcore::Osc1OscillatorOutLevel, vcore::Osc2OscillatorOutLevel,
@@ -49,8 +52,9 @@ inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination p
     vcore::AmplitudeEGReleaseTime, vcore::Osc3OscillatorPitchLFODepth, vcore::Filter2FilterCutoff, vcore::Filter2FilterCutoffEGDepth,
     vcore::Filter2FilterResonance, vcore::Osc1OscillatorPulseWidth, vcore::Osc2OscillatorPulseWidth, vcore::Filter1FilterCutoffLFODepth,
     vcore::PitchLFOSpeed, vcore::kParamCount, vcore::kParamCount, vcore::kParamCount,  // kParamCount: no patch parameter (the frequency offsets)
-    vcore::PartPortamentoTime, vcore::Osc1OscillatorWave, vcore::Osc2OscillatorWave, vcore::Osc3OscillatorWave};
-// Whether a destination parameter is a raw patch parameter (saved with the patch); the frequency offsets are not (they start at 0).
+    vcore::PartPortamentoTime, vcore::kParamCount, vcore::Osc1OscillatorWave, vcore::Osc2OscillatorWave, vcore::Osc3OscillatorWave};
+// Whether a destination parameter is a raw patch parameter (saved with the patch); the frequency offsets and the pitch are not (they
+// start at 0).
 constexpr bool hasRaw(int d) { return kDestRaw[d] != vcore::kParamCount; }
 inline constexpr double kKnobDefault = 512.0 / 1023;  // the model's default knob value
 inline constexpr ParamInfo kParams[] = {
@@ -71,7 +75,7 @@ inline constexpr ParamInfo kParams[] = {
     {"Osc 2 Frequency (cents)", "", -3600, 3600, 0, false}, {"Osc 3 Frequency (cents)", "", -3600, 3600, 0, false},
     {"Foot Controller 2", "foot2", 0, 1, 1, false}, {"Foot Switch", "footswitch", 0, 1, 0, true},
     {"Osc 1 Wave", "", 0, 4, 0, true}, {"Osc 2 Wave", "", 0, 4, 0, true}, {"Osc 3 Wave", "", 0, 4, 0, true}, {"Portamento Time", "", 0, 127, 64, false},
-    {"Output Bus", "bus", 0, kContexts, 0, true}};
+    {"Output Bus", "bus", 0, kContexts, 0, true}, {"Pitch (cents)", "", -8192, 8192, 0, false}};
 static_assert(sizeof kParams / sizeof kParams[0] == kParamCount, "one entry a parameter");
 
 // A float that can be copied (a Patch is copied) and read by one thread while another writes it.

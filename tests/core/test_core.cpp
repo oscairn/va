@@ -1007,6 +1007,19 @@ static void testBoxDestinations() {
         std::printf("box on the frequency, ratio %+d: %+.2f cents (reference %+.2f)\n", c.first - 128, cents, c.second);
         CHECK(std::fabs(cents - c.second) < 1.0);
     }
+    // the part's pitch (54; va-coverage-2026-11-22 A: a sine against the same key without the box, by zero-crossing fit): a cent an
+    // output unit, on every oscillator, to the box sum's +-8192
+    for (const auto& c : {std::pair<int, double>{129, 127.95}, {132, 511.96}, {136, 1024.00}, {120, -1024.00}, {144, 2048.00}, {192, 8191.99}}) {
+        const int key = c.first == 192 ? 24 : 36;
+        harmonics((box + "Box1ControllerSetDestination=54 Box1ControllerSetRatio=" + std::to_string(c.first) + " Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511").c_str(),
+                  key, h, 1, 4410, 44100, &L);
+        const double cents = 1200 * std::log2(meanHz(L, 4410) / (440 * std::exp2((key - 69) / 12.0)));
+        std::printf("box on the pitch, ratio %+d: %+.2f cents (reference %+.2f)\n", c.first - 128, cents, c.second);
+        CHECK(std::fabs(cents - c.second) < 1.0);
+    }
+    harmonics((box + "Box1ControllerSetDestination=54 Box1ControllerSetRatio=136 Osc1OscillatorOutLevel=0 Osc2OscillatorWave=4 Osc2OscillatorOutLevel=511").c_str(),
+              36, h, 1, 4410, 44100, &L);
+    CHECK(std::fabs(1200 * std::log2(meanHz(L, 4410) / base) - 1024) < 1.0);  // oscillator 2 alike
     harmonics((box + "Box1ControllerSetDestination=125 Box1ControllerSetRatio=144 Osc1OscillatorWave=2 Osc1OscillatorOutLevel=511").c_str(), 36, h, 2);
     const double r = std::pow(10, (h[1] - h[0]) / 20);
     std::printf("box on the pulse width, ratio +16: h2/h1 %.4f (reference 0.6965)\n", r);
