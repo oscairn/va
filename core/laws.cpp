@@ -173,13 +173,18 @@ constexpr float kUniFarDb[3][16] = {
 void unisonLaws(Sound& s, const Patch& q) {
     const int u = std::min(2, int(q[Unison]));
     s.unison = uint8_t(1 << u);
+    for (auto& sp : s.uniGain) for (auto& side : sp) for (float& x : side) x = 1;
+    for (float& x : s.uniMul) x = 0;
     if (!u) return;
     const float g = u == 1 ? float(std::sqrt(0.5)) : 0.5f;
     static const float kMul[2][4] = {{-1, 1}, {-2, -2.f / 3, 2.f / 3, 2}};
     for (int k = 0; k < s.unison; ++k) {
-        const float m = kMul[u - 1][k], far = g * float(std::pow(10.0, kUniFarDb[u == 1 ? 0 : std::fabs(m) > 1 ? 2 : 1][q[UnisonSpread]] / 20));
-        s.uniDet[k] = m * float(q[UnisonDetune]) / 100;
-        s.uniL[k] = m < 0 ? g : far; s.uniR[k] = m < 0 ? far : g;
+        const float m = kMul[u - 1][k];
+        s.uniMul[k] = m / 100;
+        for (int sp = 0; sp < 16; ++sp) {
+            const float far = g * float(std::pow(10.0, kUniFarDb[u == 1 ? 0 : std::fabs(m) > 1 ? 2 : 1][sp] / 20));
+            s.uniGain[sp][0][k] = m < 0 ? g : far; s.uniGain[sp][1][k] = m < 0 ? far : g;
+        }
     }
 }
 
@@ -367,6 +372,7 @@ const DestDef kDestDefs[kDests] = {
     {8192, -8192, 8192},  // va-coverage-2026-11-22 A: the part's pitch, a cent an output unit (+-8192 cents at the box sum's limit)
     {415, -415, 415},  // va-coverage-2026-11-22 B: every LFO's speed (119), 415 at a full box, added to each LFO's own (401's after its steps)
     {127, 1, 255},  // va-coverage-2026-11-22 C: the amplitude LFO's depth (150), 127 at a full box within its range
+    {16, 0, 15}, {16, 0, 15},  // va-coverage-2026-11-22 D: the unison detune and spread (375, 376), 16 at a full box within 0-15
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
     {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
 
@@ -501,6 +507,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         for (int n = 0; n < 3; ++n) s.stored[DWave1 + n] = int16_t(q[Param(Osc1OscillatorWave + n * stride)]);
         s.stored[DPorta] = int16_t(q[PartPortamentoTime]);
         s.stored[DAmpLfo] = int16_t(q[AmplitudeLevelLFODepth]);
+        s.stored[DUniDet] = int16_t(q[UnisonDetune]); s.stored[DUniSpread] = int16_t(q[UnisonSpread]);
     }
     const int bs = Box2ControllerSetSwitch - Box1ControllerSetSwitch;
     for (int b = 0; b < 16; ++b) {
@@ -534,6 +541,8 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestPitch: aim(DPitch); break;
         case kDestLfoAll: aim(DLfoAll); break;
         case kDestAmpLfo: aim(DAmpLfo); break;
+        case kDestUniDet: if (s.unison > 1) aim(DUniDet); break;
+        case kDestUniSpread: if (s.unison > 1) aim(DUniSpread); break;
         default: break;
         }
         if (s.targets == before) continue;

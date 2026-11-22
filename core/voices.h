@@ -40,14 +40,14 @@ struct Lfo {
 // Controller box destinations the core moves (an oscillator's own destination is one entry per oscillator).
 enum Dest : uint8_t { DPitchDepth1, DPitchDepth2, DOscLevel1, DOscLevel2, DCutoff, DFegDepth, DReso, DFegAttack, DFegDecay,
                       DFegRelease, DAmpAttack, DAmpDecay, DAmpRelease, DPitchDepth3, DCutoff2, DFegDepth2, DReso2,
-                      DPw1, DPw2, DLfoCutDepth, DLfoSpeed, DFreq1, DFreq2, DFreq3, DPorta, DPitch, DLfoAll, DAmpLfo, DWave1, DWave2, DWave3, kDests };  // DFreq, DPitch: cents, no patch parameter
+                      DPw1, DPw2, DLfoCutDepth, DLfoSpeed, DFreq1, DFreq2, DFreq3, DPorta, DPitch, DLfoAll, DAmpLfo, DUniDet, DUniSpread, DWave1, DWave2, DWave3, kDests };  // DFreq, DPitch: cents, no patch parameter
 // Box sources: the reference's numbers 0-17 (0 pitch bend, 1 mod wheel, 2 aftertouch, 3-4 foot controllers, 5 foot switch,
 // 6 ribbon, 7 breath, 8-15 knobs 1-8, 16-17 switches 1-2); a channel keeps kSources values.
 constexpr int kSources = 18;
 // The reference's destination numbers the core takes.
 constexpr int kDestPitchDepth = 124, kDestOscLevel = 136, kDestFegAttack = 139, kDestFegDecay = 140, kDestFegRelease = 141,
               kDestCutoff = 142, kDestFegDepth = 143, kDestReso = 145, kDestAmpAttack = 147, kDestAmpDecay = 148, kDestAmpRelease = 149,
-              kDestFreq = 123, kDestPw = 125, kDestLfoCutDepth = 144, kDestPitchLfoSpeed = 401, kDestWave = 122, kDestPorta = 52, kDestPitch = 54, kDestLfoAll = 119, kDestAmpLfo = 150;
+              kDestFreq = 123, kDestPw = 125, kDestLfoCutDepth = 144, kDestPitchLfoSpeed = 401, kDestWave = 122, kDestPorta = 52, kDestPitch = 54, kDestLfoAll = 119, kDestAmpLfo = 150, kDestUniDet = 375, kDestUniSpread = 376;
 struct DestDef { int16_t span, lo, hi; };
 extern const DestDef kDestDefs[kDests];
 // An oscillator's table set for a wave (raw 0-4); the pulse reads the square's set (width 0.5) or, any other width, the saw's twice.
@@ -133,9 +133,11 @@ struct Sound {
     float satK = 0;  // the x^2 term's DC is taken out (the reference's output carries none): a one-pole mean of it at 5 Hz, this a frame
     float gain = 1, panL = 0.70710678f, panR = 0.70710678f;  // the caller's level and pan
     // Unison (laws.cpp): a note sounds as `unison` engine voices (1, 2 or 4), each a whole voice with its own free-running phases and
-    // drift; copy c is detuned by uniDet[c] semitones and weighed by uniL[c] / uniR[c] (its level and its place in the spread).
+    // drift; copy c is detuned by uniMul[c] semitones a step of the detune and weighed by uniGain[spread][0 left, 1 right][c] (its level and
+    // its place in the spread). The detune and the spread are box destinations: a voice keeps its copy's number (UC).
     uint8_t unison = 1;
-    float uniDet[4] = {}, uniL[4] = {1, 1, 1, 1}, uniR[4] = {1, 1, 1, 1};
+    float uniMul[4] = {};
+    float uniGain[16][2][4];
 };
 // The destinations' raw values with the boxes at the given source values (src: 0..1023 per source; knob: 0..1).
 // stored: each destination's value before the boxes (null: the sound's own); mod: added to each destination's box sum before
@@ -151,7 +153,7 @@ enum Field {
     GL, DGL, GR, DGR,
     AENV, ASTG, AEND, ALOW, FENV, FSTG, FEND, FLOW,
     LP0, LP1, LP2, LR0, LR1, LR2, LT,
-    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, SDC, UDET, UGL, UGR,
+    KEY, GOFF, GRATE, DS1, DS2, DS3, DA1, DB1, DP1, DA2, DB2, DP2, DA3, DB3, DP3, DCUT, DCUT2, VFEG, VFEG2, VRES, VRES2, VOL, FADE, DFADE, FRESH, SATC, SDC, UC,
     QEND,  // released: the amplitude envelope level at or under which the note's output gain is below -96 dBFS (0: none; the end test only)
     NFIELDS
 };

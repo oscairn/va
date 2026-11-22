@@ -1065,6 +1065,15 @@ static void testBoxDestinations() {
         for (const auto& c : {std::array<int, 3>{128, 136, 143}, {128, 144, 159}, {128, 112, 97}, {128, 192, 255}, {160, 144, 191}})
             same(box + "Box1ControllerSetDestination=150 Box1ControllerSetRatio=" + std::to_string(c[1]) + " AmplitudeLevelLFODepth=" + std::to_string(c[0]),
                  "AmplitudeLevelLFODepth=" + std::to_string(c[2]), "the amplitude LFO's depth (150) against its static landing");
+        // the unison detune and spread (375, 376; D: the copies' beat rate and each copy's level left and right): span 16 within 0-15,
+        // +8 / +16 / +32 / +64 from 0 and -16 from 15 beat as the static 2 / 4 / 8 / 15 / 11 (within 0.002 Hz); the spread's +16 / +32 /
+        // +64 as the static 4 / 8 / 15 (within 0.01 dB)
+        for (const auto& c : {std::array<int, 4>{375, 0, 136, 2}, {375, 0, 144, 4}, {375, 0, 160, 8}, {375, 0, 192, 15}, {375, 15, 112, 11},
+                              {376, 0, 144, 4}, {376, 0, 160, 8}, {376, 0, 192, 15}}) {
+            const std::string what = c[0] == 375 ? "UnisonDetune=" : "UnisonSpread=", other = c[0] == 375 ? " UnisonSpread=5" : " UnisonDetune=6";
+            same(box + "Unison=1" + other + " Box1ControllerSetDestination=" + std::to_string(c[0]) + " Box1ControllerSetRatio=" + std::to_string(c[2]) + " " +
+                 what + std::to_string(c[1]), "Unison=1" + other + " " + what + std::to_string(c[3]), "the unison detune or spread against its static landing");
+        }
         Gap g[64]; Patch q; char e[400];
         readPatch(("vcore-patch/1 " + lfo + box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 PitchLFOSpeed=150").c_str(), q, e, sizeof e);
         q.set(Filter1FilterResonance, 0);
