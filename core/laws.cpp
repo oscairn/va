@@ -188,6 +188,12 @@ void unisonLaws(Sound& s, const Patch& q) {
     }
 }
 
+// The pan box (118; va-coverage-2026-11-22 P: a sine at key 60, the wheel stepping through a +32 and a -32 box): a balance, 128 steps at
+// a full box within +-64 (trunc(sum x 128 / 8192)); the near side at its level, the far side (left for a positive sum) down by this table
+// of the steps (dB; 63 and 64 silent). Each step's reading is the stepped level's plateau (the still takes at the wheel's 48 and 96 equal
+// it within 0.001 dB; the negative sweep's mirror equals the positive's at every step)
+constexpr float kPanDb[65] = {0, 0, 0, 0, 0, -0.376, -0.376, -0.376, -0.376, -0.376, -0.753, -0.753, -0.753, -1.129, -1.129, -1.505, -1.505, -1.881, -1.881, -2.258, -2.258, -2.634, -3.01, -3.387, -3.387, -3.763, -4.139, -4.515, -4.892, -5.268, -5.644, -6.021, -6.397, -6.773, -7.526, -7.902, -8.655, -9.031, -9.783, -10.16, -10.912, -11.665, -12.417, -13.17, -13.923, -14.675, -15.804, -16.557, -17.685, -18.814, -20.319, -21.448, -22.953, -24.835, -26.34, -28.598, -30.856, -33.49, -36.5, -40.639, -45.531, -52.68, -64.721, -200, -200};
+
 // ---- the filters ------------------------------------------------------------------------------------------------------------
 // va-round5 F1: every type is a cascade of the reference's sections (core.cpp filterRun, filterControl), read within 0.001 dB on a
 // 32.7 Hz saw's harmonics against thru. The cutoff law gives the reference's fc (Hz) at each raw value (F3: LPF12 every 8 raw
@@ -344,6 +350,7 @@ static bool buildLaws() {
     for (int i = 0; i <= 415; ++i) gLaw.lfoHz[i] = float(lfoHz(i));
     for (int i = 0; i < 128; ++i) gLaw.portaRate[i] = float(portaRate(i));
     for (int i = 0; i < 256; ++i) gLaw.lfoAmp[i] = lfoAmpLaw(i - 128);
+    for (int i = 0; i <= 64; ++i) gLaw.panFar[i] = kPanDb[i] <= -200 ? 0.f : float(std::pow(10.0, kPanDb[i] / 20.0));
     for (int i = 0; i < 256; ++i) {
         gLaw.resGain[i] = float(std::pow(10.0, at(Law{kResGainX, kResGainY, kResGainN, 0, 255}, float(i)) / 20));
         gLaw.invTau[TAttack][i] = float(1 / attackTau(i));
@@ -397,6 +404,7 @@ const DestDef kDestDefs[kDests] = {
     {415, -415, 415},  // va-coverage-2026-11-22 B: every LFO's speed (119), 415 at a full box, added to each LFO's own (401's after its steps)
     {127, 1, 255},  // va-coverage-2026-11-22 C: the amplitude LFO's depth (150), 127 at a full box within its range
     {16, 0, 15}, {16, 0, 15},  // va-coverage-2026-11-22 D: the unison detune and spread (375, 376), 16 at a full box within 0-15
+    {128, -64, 64},  // va-coverage-2026-11-22 P: the pan (118), 128 steps at a full box within +-64
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
     {4, 0, 4}, {4, 0, 4}, {4, 0, 4},
     {1, 0, 1}};  // va-coverage-2026-11-22 F: mono/poly (53, 0 mono, 1 poly), moved by a box sum past half a full box (boxRaw), read at a note-on
@@ -576,6 +584,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestUniDet: if (s.unison > 1) aim(DUniDet); break;
         case kDestUniSpread: if (s.unison > 1) aim(DUniSpread); break;
         case kDestMono: aim(DMono); break;
+        case kDestPan: aim(DPan); break;
         default: break;
         }
         if (s.targets == before) continue;

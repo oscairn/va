@@ -22,6 +22,7 @@ selected sound). The ids are stable: a new parameter gets a new id, an id is nev
 | 47 | Amp LFO Depth | none (the raw patch's own parameter) | 1..255 | as ids 14-37 | a controller box destination (below); modulatable |
 | 48, 49 | Unison Detune, Unison Spread | none (the raw patch's own parameters) | 0..15, stepped | as ids 14-37 | controller box destinations (below); modulatable |
 | 50 | Mono/Poly | none (the raw patch's own parameter) | 0 or 1, stepped | as ids 14-37 | a controller box destination (below); modulatable |
+| 51 | Balance | none (an offset from 0) | -64..64 | 0 | a controller box destination (below); modulatable |
 
 The knobs, the ribbon and the switches are what the reference's controller boxes read (box sources 8-15 = knobs 1-8). A change takes
 effect at the next control step of the core (at most 16 frames). Whatever the boxes add, the cutoff stops at the
@@ -34,7 +35,7 @@ values are ids 0-13, then the raw patch, then the Output Bus; a state 4 still lo
 not read). A host never passes the ribbon's or the switches' MIDI controllers
 (CC 16, 86, 87) to a plugin, so they are parameters, as the knobs.
 
-## Controller box destinations (ids 14-37, 40-43, 45-50)
+## Controller box destinations (ids 14-37, 40-43, 45-51)
 
 Every destination the core's boxes move is also a parameter, flagged `CLAP_PARAM_IS_MODULATABLE`, so that a converter can map a
 plain source-to-destination box onto the host's control tree with a host-side curve instead of an in-engine box. Its value is
@@ -69,6 +70,7 @@ the sound slot until the host changes it; a modulation for one note (a note id o
 | 47 | Amp LFO Depth | `AmplitudeLevelLFODepth` | 1-255 | 127 |
 | 48, 49 | Unison Detune, Unison Spread | `UnisonDetune`, `UnisonSpread` (sounding notes follow; with unison off nothing moves) | 0-15 | 16 |
 | 50 | Mono/Poly | `PartMonoPolyMode` (0 mono, 1 poly; a box sum past half a full box either way switches it, not exactly half; read at each note-on, so sounding notes keep the mode they started in) | 0-1 | 1 |
+| 51 | Balance | none: the pan box's steps, a balance: the near side at its level, the far side (left for a positive value) down by a measured table, silent from 63; with the sound's own pan; not saved with the patch | -64..64 | 128 |
 
 For a linear box (curve Standard 5) both paths give the same result: the ABI test plays the mod wheel at 127 through a box of
 ratio +8 on the cutoff and a modulation of 127.875 steps, bit for bit the same. In-engine boxes stay for what a host curve does

@@ -23,6 +23,7 @@ struct Ctl {  // one sound's constants for one control step of n frames
     float freq[3], pwRaw[2], lfoCut;          // the boxes' frequency offsets (semitones), pulse widths (raw), filter LFO depth (semitones)
     float lfoRate[5];                         // the pitch, filter, amplitude and oscillators 1-2's LFO speeds (cycles a frame)
     float lfoAmp;                             // the amplitude LFO's depth (Sound::lfoAmp)
+    float balL, balR;                         // the pan box's balance (1 at the center)
     float uniDet[4], uniL[4], uniR[4];        // each unison copy's detune (semitones) and level left and right, at the detune and spread now
     const float* tab[3]; float stride[3];     // each oscillator's table set and level stride (a box may change its wave)
     float portaRate;                          // the glide's rate (semitones a frame; time modes 0 and 2)
@@ -375,8 +376,8 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
     l.set(FADE, fade);
     vf g = l(AENV) * l(VOL) * l(VELG) * fade * splat(s.level * s.gain) * fg;
     if (s.plan.lfo[2]) g = g * exp2v(lamp);
-    l.ramp(GL, DGL, g * splat(s.panL) * load(ul), vm{}, rn);  // a unison copy's level and place in the spread (1: one voice)
-    l.ramp(GR, DGR, g * splat(s.panR) * load(ur), vm{}, rn);
+    l.ramp(GL, DGL, g * splat(s.panL * c.balL) * load(ul), vm{}, rn);  // a unison copy's level and place in the spread (1: one voice)
+    l.ramp(GR, DGR, g * splat(s.panR * c.balR) * load(ur), vm{}, rn);
     if (s.sat) l.set(SATC, fma(splat(s.satCa), l(AENV), splat(s.satC)) * fg);  // the x^2 term on the buffer (the filters' gain and the EG come later)
     l.set(FRESH, splat(0.f));
 }
@@ -900,6 +901,7 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
         c.lfoRate[3] = s.oscLfo[0].rate; c.lfoRate[4] = s.oscLfo[1].rate; c.lfoAmp = s.lfoAmp;
         auto uni = [&](int det, int sp) { for (int k = 0; k < 4; ++k) { c.uniDet[k] = s.uniMul[k] * float(det); c.uniL[k] = s.uniGain[sp][0][k]; c.uniR[k] = s.uniGain[sp][1][k]; } };
         uni(s.stored[DUniDet], s.stored[DUniSpread]);
+        c.balL = c.balR = 1;
         if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
             int16_t raw[kDests];
             float src[kSources];
@@ -922,6 +924,7 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
             for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)
                 if (raw[DWave1 + o] != s.stored[DWave1 + o]) { c.tab[o] = waveTable(raw[DWave1 + o], true); c.stride[o] = raw[DWave1 + o] == 4 ? 0.f : float(kTabN + 1); }
             if (raw[DAmpLfo] != s.stored[DAmpLfo]) c.lfoAmp = t.lfoAmp[raw[DAmpLfo]];
+            if (raw[DPan]) { const int a = raw[DPan] < 0 ? -raw[DPan] : raw[DPan]; (raw[DPan] > 0 ? c.balL : c.balR) = t.panFar[a]; }
             if (raw[DUniDet] != s.stored[DUniDet] || raw[DUniSpread] != s.stored[DUniSpread]) uni(raw[DUniDet], raw[DUniSpread]);
             if (raw[DPorta] != s.stored[DPorta]) c.portaRate = t.portaRate[raw[DPorta]] * float(1 / sr_);
             // the pitch LFO's own speed (401) and every LFO's (119), each destination's steps added to the stored speed, within 0-415

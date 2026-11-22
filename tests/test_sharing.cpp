@@ -6,7 +6,7 @@
 
 namespace {
 constexpr clap_id kBus = 44;
-constexpr uint32_t kParamsWritable = 51;
+constexpr uint32_t kParamsWritable = 52;
 
 // Part k's sound (k >= 1; 0 is the test Default): its own level, pan, cutoff, wave and release
 std::string soundOf(int k) {

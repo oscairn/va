@@ -1187,6 +1187,32 @@ static void testVelocitySensitivity() {
     for (int sv : {256 + 129, 256 - 160, 511, 1}) { q.set(AmplitudeLevelVelocitySensitivity, sv); CHECK(notCovered(q, g, 64) == 1 && g[0].param == AmplitudeLevelVelocitySensitivity); }
 }
 
+// The pan box (118; va-coverage-2026-11-22 E, P): a balance, the far side down by its step's attenuation: +8 / +16 / +24 / -16 at a full
+// box (16 / 32 / 48 / -32 steps) -> left -1.505 / -6.397 / -17.685 dB, right -6.397; +32 (64 steps) silent on the left; the near side unmoved.
+static void testPanBox() {
+    auto lr = [](int ratio, double* l, double* r) {
+        Patch p; char e[300];
+        readPatch(("vcore-patch/1 VoltageDrift=0 AmplitudeEGSustainLevel=511 AmplitudeEGDecayTime=255 Filter1FilterType=0 Filter2FilterType=0 Osc1OscillatorWave=4 "
+                   "Osc1OscillatorOutLevel=511 Osc2OscillatorOutLevel=0 Osc3OscillatorOutLevel=0 PartAssignableKnob1Value=1023 Box1ControllerSetSwitch=1 "
+                   "Box1ControllerSetSource=8 Box1ControllerSetPolarity=0 Box1ControllerSetDestination=118 Box1ControllerSetRatio=" + std::to_string(128 + ratio)).c_str(), p, e, sizeof e);
+        auto c = std::make_unique<Core>(); c->prepare(48000); c->load(0, p); c->setGain(0, 1, 0); c->noteOn(0, 0, 0, 60, 0.8f);
+        std::vector<float> L(24000), R(24000); c->render(L.data(), R.data(), 24000);
+        double a = 0, b = 0; for (size_t i = 12000; i < L.size(); ++i) { a += double(L[i]) * L[i]; b += double(R[i]) * R[i]; }
+        *l = 10 * std::log10(a + 1e-30); *r = 10 * std::log10(b + 1e-30);
+    };
+    double l0, r0; lr(0, &l0, &r0);
+    const struct { int ratio; double l, r; } pts[] = {{8, -1.505, 0}, {16, -6.397, 0}, {24, -17.685, 0}, {-16, 0, -6.397}};
+    for (const auto& t : pts) {
+        double l, r; lr(t.ratio, &l, &r);
+        std::printf("pan box %+d: left %+.3f right %+.3f dB (reference %+.3f / %+.3f)\n", t.ratio, l - l0, r - r0, t.l, t.r);
+        CHECK(std::fabs(l - l0 - t.l) < 0.01 && std::fabs(r - r0 - t.r) < 0.01);
+    }
+    double l, r; lr(32, &l, &r);
+    CHECK(l < -200 && std::fabs(r - r0) < 0.01);
+    Gap g[64]; Patch q; q.set(Box1ControllerSetSwitch, 1); q.set(Box1ControllerSetDestination, 118);
+    CHECK(notCovered(q, g, 64) == 0);
+}
+
 static void testSaturators() {
     const std::string sine = "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=1023 ";
     double h0[2], h[2];
@@ -1259,7 +1285,7 @@ static void testStatistics() {
 }
 
 int main() {
-    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
+    testText(); testCoverage(); testCutoffAgainstReference(); testFilterTypes(); testCalibration(); testOscLevel(); testAlias(); testReleaseThreshold(); testQuietEnd(); testLongSegment(); testBoxLaw(); testPitchDepthKnots(); testCurves();testFegDepthZero(); testTimeLaws(); testDrift(); testInterleaveIdentical(); testVoiceLifetime(); testPitchLfo(); testBoxDestinations(); testAgeing(); testPressureSource(); testWaveBox(); testWaves(); testSaturators(); testVelocitySensitivity(); testPanBox(); testPortamento(); testPortamentoBox(); testMonoAndSingle(); testUnison(); testUnisonNotes(); testStatistics();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "ok", failures);
     return failures ? 1 : 0;
 }
