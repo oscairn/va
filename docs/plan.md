@@ -43,11 +43,11 @@ parameter id.
 |---|---|---|---|---|
 | `BoxN ControllerSetDestination`: controller box destination: not built | 474 | 683 | yes | partly done (0.11.5): the report names each destination's class: the host's (an effect's parameter, a send, the arpeggio, the motion sequence, the part's pan), out of scope (self sync, wave shaper, FM, ring, noise, the modifier), not built (the pitch and pulse width EGs, the part LFO); played since: 54 (the part's pitch), 119 (every LFO's speed), 150 (the amplitude LFO's depth), 375 and 376 (the unison detune and spread), 53 (mono/poly), 118 (the pan, a balance) |
 | `AmplitudeLevelVelocitySensitivity`: velocity sensitivity: measured only at 0 (no effect) | 202 | 312 | yes | done (0.11.5): measured at 14 sensitivities and 12 velocities; played to 128 steps either way and at 192 |
-| `Filter1FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 188 | 272 | yes | open |
+| `Filter1FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 188 | 272 | yes | partly done (0.11.5): every drive measured; built 0-32 (past it the gain moves with the level) |
 | `PartKeyControllerSet1Switch`: key controller boxes: not built | 164 | 220 | yes | open |
 | `Filter1FilterResonance`: resonance at high cutoffs: the fit misses by over 1 dB there (any value to 2.1 kHz, LPF24 0.7 kHz; to 64 up to 5.9 / 2.1 kHz; 32 anywhere) | 162 | 208 | yes | open |
 | `BoxN ControllerSetCurveType`: controller box curve: not measured | 135 | 184 | yes | partly done (0.11.4): 35 preset curves measured at the mod wheel's 128 values; counted again with the engine's report on the stock set read through the converter, 60 parts (49 Performances) on curves still not measured (fully covered parts 3 to 4) |
-| `AmplitudeSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 115 | 194 | yes | open |
+| `AmplitudeSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 115 | 194 | yes | partly done (0.11.5): every drive measured; built 0-32 |
 | `Filter1FilterOutLevel`: filter out level: no measured law | 106 | 134 | yes | done (0.11.5): 6.0206 / 16 dB a step, every type alike (filter 2's still reported) |
 | `Ageing`: aging: no effect on the drift (0-200 at drift 0, 100-200 at drift 64 and 100); with a release under 100 it moves the voices' spread of release times, not built | 105 | 157 | yes | open |
 | `AmplitudeLevelKeyFollow`: amplitude key follow: no measured law | 105 | 152 | yes | done (0.11.5): measured at eight values over keys 24-108; played |
@@ -67,7 +67,7 @@ parameter id.
 | `Osc1OscillatorOutLevelVelocitySensitivity`: velocity sensitivity: no measured law | 51 | 77 | yes | open |
 | `OSCReset`: oscillator reset modes: not built (free running only) | 50 | 65 | yes | open |
 | `Osc1OscillatorRingLevel`: ring: out of scope | 49 | 71 | yes | open |
-| `Filter2FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 46 | 58 | yes | open |
+| `Filter2FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 46 | 58 | yes | partly done (0.11.5): built 0-32, filter 1's law |
 | `Filter2FilterResonance`: high-pass resonance: its pass-band gain not measured | 45 | 56 | yes | open |
 | `AmplitudeEGDecayTime`: decay (with its boxes): law measured 100-255 | 42 | 70 | yes | open |
 | `Osc1OscillatorWaveShaper`: wave shaper: out of scope | 42 | 49 | yes | open |

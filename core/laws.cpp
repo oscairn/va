@@ -149,16 +149,19 @@ double portaRate(int t) {  // semitones a second
 }
 
 
-// The saturators (va-round7 X1: a 65.4 Hz sine through LPF24 at 1023; h1 against drive 0, h2 against h1 with its sign): at the drives
-// measured, y = g (x + a2 x^2), x the filters' output over a single sine's at oscillator level 511 (1.1663 in the engine's units); g and
-// a2 hold from oscillator level 90 to 511 (within 0.1 dB and 5 %), h3 stays under -64 dB to drive 23. Filter 1's and filter 2's are one
-// law (S2_* within 0.03 dB and 0.0004); a filter's acts only where the filter does (thru: none). Between the measured drives g is not
-// monotonic (16: +1.30 dB, 23: +0.73), so only those are taken (coverage).
-constexpr int kSatDrive[] = {0, 2, 4, 7, 8, 12, 15, 16, 23};
-constexpr float kSatFiltDb[] = {0, 0.166f, 0.537f, 1.070f, 1.165f, 1.131f, 1.072f, 1.298f, 0.727f};
-constexpr float kSatFiltA2[] = {0, 0.00188f, 0.00224f, 0.00291f, 0.00318f, 0.00448f, 0.00581f, 0.00633f, 0.01159f};
-constexpr float kSatAmpDb[] = {0, 0.148f, 0.363f, 0.579f, 0.609f, 0.768f, 0.859f, 0.878f, 1.716f};
-constexpr float kSatAmpA2[] = {0, 0.00124f, 0.00148f, 0.00191f, 0.00209f, 0.00295f, 0.00383f, 0.00417f, 0.00763f};
+// The saturators (va-round7 X1: a 65.4 Hz sine through LPF24 at 1023; h1 against drive 0, h2 against h1 with its sign): y = g (x + a2 x^2),
+// x the filters' output over a single sine's at oscillator level 511 (1.1663 in the engine's units); h3 under -51 dB re h1 to drive 32.
+// Filter 1's and filter 2's are one law (S2_* within 0.03 dB and 0.0004); a filter's acts only where the filter does (thru: none). g is not
+// monotonic in the drive (it rises and falls about every ten steps), so every drive is its own value: 2, 4, 7, 8, 12, 15, 16, 23 from X1,
+// the others from va-coverage-2026-11-22 S (every drive 1-80, the same probe; at the X1 drives it reads g within 0.015 dB and the filter's
+// a2 5 % over X1's, the amplitude's within 1 %: X1's kept). Past 32 not built: at 48 g moves with the level (filter +2.58 / +3.04 / +3.10 dB
+// at oscillator levels 511 / 300 / 160) and h3 rises over -50 dB from 38 (filter) and 34 (amplitude); at 32 g and a2 hold within 0.04 dB
+// and 0.8 % (filter), 0.07 dB and 1.4 % (amplitude) from level 160 to 511.
+constexpr int kSatDrives = 33;  // 0-32
+constexpr float kSatFiltDb[kSatDrives] = {0, 0.07f, 0.166f, 0.309f, 0.537f, 0.785f, 0.984f, 1.07f, 1.165f, 1.247f, 1.281f, 1.316f, 1.131f, 0.926f, 0.839f, 1.072f, 1.298f, 1.378f, 1.288f, 1.198f, 0.908f, 0.603f, 0.53f, 0.727f, 0.906f, 1.09f, 1.231f, 1.369f, 1.509f, 1.589f, 1.581f, 1.573f, 1.562f};
+constexpr float kSatFiltA2[kSatDrives] = {0, 0.00181f, 0.00188f, 0.00216f, 0.00224f, 0.00257f, 0.0028f, 0.00291f, 0.00318f, 0.00363f, 0.00396f, 0.00431f, 0.00448f, 0.00513f, 0.0056f, 0.00581f, 0.00633f, 0.00726f, 0.00791f, 0.00862f, 0.0094f, 0.01025f, 0.01117f, 0.01159f, 0.01328f, 0.01448f, 0.01578f, 0.01721f, 0.01876f, 0.02044f, 0.02228f, 0.02427f, 0.02644f};
+constexpr float kSatAmpDb[kSatDrives] = {0, 0.05f, 0.148f, 0.272f, 0.363f, 0.481f, 0.544f, 0.579f, 0.609f, 0.644f, 0.675f, 0.714f, 0.768f, 0.807f, 0.827f, 0.859f, 0.878f, 0.889f, 0.909f, 1.103f, 1.291f, 1.484f, 1.617f, 1.716f, 1.787f, 1.588f, 1.291f, 0.995f, 1.026f, 1.08f, 1.133f, 1.189f, 1.243f};
+constexpr float kSatAmpA2[kSatDrives] = {0, 0.00115f, 0.00124f, 0.00137f, 0.00148f, 0.00162f, 0.00177f, 0.00191f, 0.00209f, 0.00229f, 0.0025f, 0.00273f, 0.00295f, 0.00324f, 0.00354f, 0.00383f, 0.00417f, 0.00458f, 0.00499f, 0.00545f, 0.00594f, 0.00647f, 0.00705f, 0.00763f, 0.00838f, 0.00914f, 0.00996f, 0.01085f, 0.01182f, 0.01287f, 0.01401f, 0.01526f, 0.01661f};
 constexpr double kSatUnit = 1.1663;  // the engine's single sine at oscillator level 511, filter open
 
 // Unison (va-round8 U: a sine at keys 60, 84 and 96, each copy's partial read in the left and right channels; va-round7 X1 for the values
@@ -209,7 +212,7 @@ double filterFc(int c) {  // log-frequency between the knots
     return std::exp((1 - u) * std::log(double(kFcY[i - 1])) + u * std::log(double(kFcY[i])));
 }
 }  // namespace
-int satIndex(int drive) { for (int i = 0; i < 9; ++i) if (kSatDrive[i] == drive) return i; return -1; }
+int satIndex(int drive) { return drive >= 0 && drive < kSatDrives ? drive : -1; }
 double cutoffHz(int raw) { return filterFc(std::max(0, std::min(1023, raw))); }
 namespace {
 // Amplitude level velocity sensitivity (va-coverage-2026-11-22 G: a sine at key 60, 12 velocities at each of 14 sensitivities; the same

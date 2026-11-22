@@ -1265,7 +1265,10 @@ static void testSaturators() {
     harmonics(sine.c_str(), 36, h0, 2);
     const struct { const char* extra; double gain, h2; } cases[] = {
         {"Filter1FilterSaturatorDrive=7", 1.070, -56.5}, {"Filter1FilterSaturatorDrive=15", 1.072, -50.8}, {"Filter1FilterSaturatorDrive=23", 0.727, -44.7},
-        {"Filter2FilterType=5 Filter2FilterSaturatorDrive=15", 1.072 - 0.65, -50.8}, {"AmplitudeSaturatorDrive=8", 0.609, -59.7}};
+        {"Filter2FilterType=5 Filter2FilterSaturatorDrive=15", 1.072 - 0.65, -50.8}, {"AmplitudeSaturatorDrive=8", 0.609, -59.7},
+        // va-coverage-2026-11-22 S (every drive 1-80, the same probe): filter 11 / 30, amplitude 20 / 32
+        {"Filter1FilterSaturatorDrive=11", 1.316, -53.3}, {"Filter1FilterSaturatorDrive=30", 1.581, -39.1}, {"AmplitudeSaturatorDrive=20", 1.291, -50.5},
+        {"AmplitudeSaturatorDrive=32", 1.243, -41.6}};
     for (const auto& c : cases) {
         harmonics((sine + c.extra).c_str(), 36, h, 2);
         std::printf("saturator %s: h1 %+.3f dB, h2 %.1f dB re h1 (reference %+.3f, %.1f)\n", c.extra, h[0] - h0[0], h[1] - h[0], c.gain, c.h2);
@@ -1303,8 +1306,12 @@ static void testSaturators() {
     q = Patch();  // the model's default: filter 2 a high-pass at 0 (under 5.2 Hz, its gain only)
     q.set(Filter1FilterSaturatorDrive, 23); q.set(Filter2FilterSaturatorDrive, 15); q.set(AmplitudeSaturatorDrive, 8);
     CHECK(notCovered(q, g, 64) == 0);
-    q.set(Filter1FilterSaturatorDrive, 24);
+    q.set(Filter1FilterSaturatorDrive, 32); q.set(AmplitudeSaturatorDrive, 32);
+    CHECK(notCovered(q, g, 64) == 0);  // every drive to 32 (va-coverage-2026-11-22 S)
+    q.set(Filter1FilterSaturatorDrive, 33);
     CHECK(notCovered(q, g, 64) == 1 && g[0].param == Filter1FilterSaturatorDrive);
+    q.set(Filter1FilterSaturatorDrive, 32); q.set(AmplitudeSaturatorDrive, 33);
+    CHECK(notCovered(q, g, 64) == 1 && g[0].param == AmplitudeSaturatorDrive);
 }
 
 static void testStatistics() {

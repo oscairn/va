@@ -301,7 +301,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
             g.add(PartFilterCutoffFrequency, "the part's cutoff offset on filter 2: not measured");
         if (r.lo[dd] < -160) g.add(flt(f, Filter1FilterCutoffEGDepth), "EG depth (with its boxes) under 96: law measured 96-448 (it stops at 448)");
         if (f == 1) g.need(q, Filter2FilterCutoffLFODepth, 256, 256, "filter 2 LFO depth: not measured");
-        if (satIndex(q[flt(f, Filter1FilterSaturatorDrive)]) < 0) g.add(flt(f, Filter1FilterSaturatorDrive), "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
+        if (satIndex(q[flt(f, Filter1FilterSaturatorDrive)]) < 0) g.add(flt(f, Filter1FilterSaturatorDrive), "saturator drive: built 0-32 (past it the gain moves with the level, not modeled)");
         else if (!f && q[Filter1FilterSaturatorDrive] && q[Filter2FilterType] && !highPassAsGain(q))
             g.add(Filter1FilterSaturatorDrive, "filter 1's saturator with filter 2 a filter: the saturators run after both filters, so not built");
         if (f) g.need(q, Filter2FilterOutLevel, 64, 64, "filter out level: no measured law");  // filter 1's: measured (laws.cpp)
@@ -347,7 +347,7 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
         g.need(q, AmplitudeLFODelayTime, 0, 0, "amplitude LFO delay: not measured");
         g.need(q, AmplitudeLFOFadeInTime, 0, 0, "amplitude LFO fade-in: not measured");
     }
-    if (satIndex(q[AmplitudeSaturatorDrive]) < 0) g.add(AmplitudeSaturatorDrive, "saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23");
+    if (satIndex(q[AmplitudeSaturatorDrive]) < 0) g.add(AmplitudeSaturatorDrive, "saturator drive: built 0-32 (past it the gain moves with the level, not modeled)");
     if (r.lo[DAmpDecay] < 100) g.add(AmplitudeEGDecayTime, "decay (with its boxes): law measured 100-255");
     g.need(q, AmplitudeEGTimeVelocitySensitivity, 256, 256, "EG time velocity sensitivity: no measured law");
     // part
