@@ -829,6 +829,24 @@ static void testMonoAndSingle() {
     CHECK(core->voiceCount() == 1);
     core->noteOff(0); core->render(l.data(), r.data(), 480);
     CHECK(core->voiceCount() == 1 && !core->voice(1).releasing && !core->voice(0).sounding);
+    // a box on mono/poly (53; va-coverage-2026-11-22 F: key 60 held, then 67): from poly, -64 at the wheel's 65 (sum -4160) turns mono and
+    // 64 (-4096) does not, nor -16 at 127; from mono, +64 at 127 turns poly and at 64 does not; read at a note-on: the wheel moved while
+    // both sound changes nothing, moved before the second note it takes the first note over
+    auto two = [](int mode, int ratio, int wheel, int movedTo, bool before) {
+        Patch q; q.set(PartMonoPolyMode, mode); q.set(Box1ControllerSetSwitch, 1); q.set(Box1ControllerSetSource, 1);
+        q.set(Box1ControllerSetDestination, 53); q.set(Box1ControllerSetRatio, 128 + ratio); q.set(Box1ControllerSetPolarity, 0);
+        auto c = std::make_unique<Core>(); c->prepare(48000); c->load(0, q); c->setGain(0, 1, 0);
+        std::vector<float> l(480), r(480);
+        c->setController(0, 1, float(wheel) / 127);
+        c->noteOn(0, 0, 0, 60, 0.8f); c->render(l.data(), r.data(), 480);
+        if (before) c->setController(0, 1, float(movedTo) / 127);
+        c->noteOn(1, 0, 0, 67, 0.8f); c->render(l.data(), r.data(), 480);
+        if (!before) { c->setController(0, 1, float(movedTo) / 127); c->render(l.data(), r.data(), 480); }
+        return c->voice(0).sounding && c->voice(1).sounding && c->voiceCount() == 2;  // true: both sound (poly)
+    };
+    CHECK(two(1, -64, 63, 63, true) && two(1, -64, 64, 64, true) && !two(1, -64, 65, 65, true) && !two(1, -64, 127, 127, true));
+    CHECK(two(1, -16, 127, 127, true) && two(1, 64, 127, 127, true) && !two(0, 64, 64, 64, true) && two(0, 64, 127, 127, true));
+    CHECK(!two(1, -64, 0, 127, true) && two(1, -64, 0, 127, false));
 }
 
 // Unison against the reference (va-round8 U, a sine at key 84): each copy's partial at its detune, its level in the near and the far

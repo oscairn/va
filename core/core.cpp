@@ -559,6 +559,7 @@ void Core::install(uint32_t i, const Sound& in) {
     s.gain = gain; s.panL = l; s.panR = r;
     for (int k = 0; k < 8; ++k) knob_[i][k] = s.knob[k];
     for (int d = 0; d < kDests; ++d) dest_[i][d] = s.stored[d];
+    mono_[i] = s.mono;
     bool m = false;
     for (float x : mod_[i]) m |= x != 0.f;
     live_[i] = m;
@@ -645,26 +646,35 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
     if (v >= kMaxVoices || si >= kMaxSounds || !sound_[si].loaded) return;
     kill(v);
     Pool& p = pool_[si]; const Sound& s = sound_[si];
+    if (s.boxes || live_[si]) {  // a box on mono/poly is read at the note-on (F: moved while two notes sound, both go on)
+        float src[kSources]; int16_t raw[kDests];
+        sources_(si, ch, src);
+        boxRaw(s, src, knob_[si], raw, dest_[si], mod_[si]);
+        const bool mono = raw[DMono] == 0;
+        if (!mono) nheld_[si] = 0;  // keys held in mono no longer come back
+        mono_[si] = mono;
+    }
+    const bool monoNow = mono_[si];
     const float k = float(key) + s.keyOffset;
     // The sound's note that takes the new one over: a mono sound's (if one sounds and is not fading), or with single key
     // assignment one already on this key. Its earlier note ends (a mono sound keeps it held, to come back to); every voice of it
     // (a unison note's copies) goes over to the new note together.
     int take = -1;
     for (uint32_t i = 0; i < p.n && take < 0; ++i)
-        if (p.f[DFADE][i] == 0.f && (s.mono || (s.single && p.f[KEY][i] == k))) take = int(i);
-    bool keyHeld = s.mono ? nheld_[si] > 0 : false;
-    if (!s.mono) for (uint32_t i = 0; i < p.n; ++i) keyHeld |= p.f[ASTG][i] < kStageRelease && p.f[DFADE][i] == 0.f;
+        if (p.f[DFADE][i] == 0.f && (monoNow || (s.single && p.f[KEY][i] == k))) take = int(i);
+    bool keyHeld = monoNow ? nheld_[si] > 0 : false;
+    if (!monoNow) for (uint32_t i = 0; i < p.n; ++i) keyHeld |= p.f[ASTG][i] < kStageRelease && p.f[DFADE][i] == 0.f;
     const float from = pitchNow_(si);
     if (take >= 0) {
         const uint32_t u = p.voice[take];
-        const bool uHeld = s.mono ? nheld_[si] && held_[si][nheld_[si] - 1].voice == u : p.f[ASTG][take] < kStageRelease;
+        const bool uHeld = monoNow ? nheld_[si] && held_[si][nheld_[si] - 1].voice == u : p.f[ASTG][take] < kStageRelease;
         if (uHeld) park_(si, u, v);  // its key is still down: its note-off then only lets it go
         else { for (auto& x : slot_) if (x.parked && x.sound == int(si) && x.owner == u) x.owner = uint8_t(v); slot_[u] = Slot{}; }
         for (uint32_t i = 0; i < p.n; ++i) {
             if (p.voice[i] != u) continue;
             p.voice[i] = uint8_t(v); p.channel[i] = uint8_t(ch & 15);
             p.f[KEY][i] = k; p.f[GOFF][i] = 0;
-            if (!(s.mono && s.porta && keyHeld)) retrigger_(si, i);  // legato only in mono with portamento, a key held
+            if (!(monoNow && s.porta && keyHeld)) retrigger_(si, i);  // legato only in mono with portamento, a key held
             if (s.porta && (s.portaFull || keyHeld)) glide_(si, i, from);
         }
         slot_[v] = {int8_t(si), uint8_t(take), false, 0, 0};
@@ -718,9 +728,14 @@ void Core::noteOn(uint32_t v, uint32_t si, int ch, int key, float vel) {
             slot_[v] = {int8_t(si), uint8_t(i), false, 0, 0};
         }
     }
-    if (s.mono && nheld_[si] < kMaxVoices) held_[si][nheld_[si]++] = {uint8_t(v), k};
+    if (monoNow && nheld_[si] < kMaxVoices) held_[si][nheld_[si]++] = {uint8_t(v), k};
     lastKey_[si] = k; lastVoice_[si] = int16_t(v);
     chan_[si] = uint8_t(ch & 15);
+}
+
+void Core::sources_(uint32_t si, int ch, float* src) const {
+    for (int k = 0; k < kSources; ++k) src[k] = src_[ch & 15][k];
+    src[6] = panel_[si][0]; src[16] = panel_[si][1]; src[17] = panel_[si][2]; src[4] = panel_[si][3]; src[5] = panel_[si][4];
 }
 
 void Core::noteOff(uint32_t v) {
@@ -729,7 +744,7 @@ void Core::noteOff(uint32_t v) {
     const uint32_t si = uint32_t(slot_[v].sound);
     Pool& p = pool_[si]; const Sound& s = sound_[si];
     if (slot_[v].parked) { unhold_(si, v); slot_[v] = Slot{}; return; }  // a key whose voice another note took over
-    if (s.mono) {  // the key comes off the held list; the note's voices go back to the newest key still held, else release
+    if (mono_[si]) {  // the key comes off the held list; the note's voices go back to the newest key still held, else release
         unhold_(si, v);
         if (nheld_[si]) {
             const Held h = held_[si][nheld_[si] - 1];
@@ -778,7 +793,7 @@ void Core::free_(uint32_t si, uint32_t owner) {
     Pool& p = pool_[si];
     slot_[owner] = Slot{};
     for (auto& x : slot_) if (x.parked && x.sound == int(si) && x.owner == owner) x = Slot{};  // the keys it took over end with it
-    if (sound_[si].mono) nheld_[si] = 0;
+    if (mono_[si]) nheld_[si] = 0;
     for (uint32_t i = p.n; i-- > 0;) {
         if (p.voice[i] != owner) continue;
         const uint32_t last = --p.n;  // the positions above i are not the owner's: the one moved down is another note's
@@ -887,8 +902,7 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
         if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
             int16_t raw[kDests];
             float src[kSources];
-            for (int k = 0; k < kSources; ++k) src[k] = src_[chan_[si]][k];
-            src[6] = panel_[si][0]; src[16] = panel_[si][1]; src[17] = panel_[si][2]; src[4] = panel_[si][3]; src[5] = panel_[si][4];
+            sources_(si, chan_[si], src);
             boxRaw(s, src, knob_[si], raw, dest_[si], mod_[si]);
             const LawTables& t = lawTables();
             c.lfoPitch[0] = t.pitchSemi[raw[DPitchDepth1]]; c.lfoPitch[1] = t.pitchSemi[raw[DPitchDepth2]]; c.lfoPitch[2] = t.pitchSemi[raw[DPitchDepth3]];

@@ -374,7 +374,8 @@ const DestDef kDestDefs[kDests] = {
     {127, 1, 255},  // va-coverage-2026-11-22 C: the amplitude LFO's depth (150), 127 at a full box within its range
     {16, 0, 15}, {16, 0, 15},  // va-coverage-2026-11-22 D: the unison detune and spread (375, 376), 16 at a full box within 0-15
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
-    {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
+    {4, 0, 4}, {4, 0, 4}, {4, 0, 4},
+    {1, 0, 1}};  // va-coverage-2026-11-22 F: mono/poly (53, 0 mono, 1 poly), moved by a box sum past half a full box (boxRaw), read at a note-on
 
 // The destinations' raw values with the boxes at these source values (src: s 0..1023 per source; knobs 0..1).
 void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, const int16_t* stored, const float* mod) {
@@ -397,6 +398,11 @@ void boxRaw(const Sound& s, const float* src, const float* knob, int16_t* raw, c
         const float tt = total[d] < -8192.f ? -8192.f : total[d] > 8192.f ? 8192.f : total[d], x = tt * (4.f / 8192);
         const int v = stored[d] + int(x + (x < 0 ? -0.5f : 0.5f));
         raw[d] = int16_t(v < 0 ? 0 : v > 4 ? 4 : v);
+    }
+    {  // mono/poly: a sum past half a full box either way moves it (F: -4160 turns poly to mono, -4096 and -2048 do not; +4096 from mono not, +8192 does)
+        const float tt = total[DMono];
+        const int v = stored[DMono] + (tt > 4096.f ? 1 : tt < -4096.f ? -1 : 0);
+        raw[DMono] = int16_t(v < 0 ? 0 : v > 1 ? 1 : v);
     }
 }
 
@@ -507,6 +513,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         for (int n = 0; n < 3; ++n) s.stored[DWave1 + n] = int16_t(q[Param(Osc1OscillatorWave + n * stride)]);
         s.stored[DPorta] = int16_t(q[PartPortamentoTime]);
         s.stored[DAmpLfo] = int16_t(q[AmplitudeLevelLFODepth]);
+        s.stored[DMono] = int16_t(q[PartMonoPolyMode]);
         s.stored[DUniDet] = int16_t(q[UnisonDetune]); s.stored[DUniSpread] = int16_t(q[UnisonSpread]);
     }
     const int bs = Box2ControllerSetSwitch - Box1ControllerSetSwitch;
@@ -543,6 +550,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestAmpLfo: aim(DAmpLfo); break;
         case kDestUniDet: if (s.unison > 1) aim(DUniDet); break;
         case kDestUniSpread: if (s.unison > 1) aim(DUniSpread); break;
+        case kDestMono: aim(DMono); break;
         default: break;
         }
         if (s.targets == before) continue;

@@ -172,6 +172,8 @@ private:
     struct Held { uint8_t voice; float key; };
     Held held_[kMaxSounds][kMaxVoices] = {};  // a mono sound's keys held, oldest first (the newest owns the voice)
     uint8_t nheld_[kMaxSounds] = {};
+    bool mono_[kMaxSounds] = {};  // each sound's mono/poly now: its patch's, or its boxes' at the latest note-on (va-coverage F)
+    void sources_(uint32_t sound, int channel, float* src) const;  // a sound's box sources now (the channel's controllers, its panel)
     Slot slot_[kMaxVoices];
     Sound sound_[kMaxSounds];
     Pool pool_[kMaxSounds];
