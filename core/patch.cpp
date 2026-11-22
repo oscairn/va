@@ -108,6 +108,17 @@ Param osc(int n, Param p1) { return Param(p1 + n * kOscStride); }
 Param flt(int n, Param p1) { return Param(p1 + n * kFilterStride); }
 Param box(int n, Param p1) { return Param(p1 + n * kBoxStride); }
 
+// Why a box destination the core does not move is not played, by the reference's destination numbers.
+const char* unbuiltDest(int d) {
+    if (d <= 51 || (d >= 151 && d <= 374) || (d >= 377 && d <= 400))
+        return "controller box on an effect, send, arpeggio, motion sequence or part mixing parameter: the host's, not the engine's";
+    if ((d >= 128 && d <= 135) || d == 137 || d == 138 || d == 403 || d >= 406)
+        return "controller box on self sync, wave shaper, FM, ring, noise or the modifier: out of scope";
+    if (d == 120 || d == 121 || d == 126) return "controller box on the pitch or pulse width EG: not built";
+    if (d >= 56 && d <= 59) return "controller box on the part LFO: not built";
+    return "controller box destination: not built";
+}
+
 // The raw range each box destination reaches: a knob source at the patch's own knob value, any other source over its
 // whole range (a performance controller); the boxes' outputs summed as the reference does (laws.cpp boxRaw).
 struct Reach { int lo[kDests], hi[kDests]; bool moved[kDests]; };
@@ -147,7 +158,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         case kDestPitchLfoSpeed: d[nd++] = DLfoSpeed; break;
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) d[nd++] = Dest(DWave1 + n); break;
         case kDestPorta: if (q[PortamentoMaster] && q[PartPortamentoSwitch]) d[nd++] = DPorta; break;
-        default: g.add(box(b, Box1ControllerSetDestination), "controller box destination: not built"); continue;
+        default: g.add(box(b, Box1ControllerSetDestination), unbuiltDest(dest)); continue;
         }
         if (!nd) continue;  // reaches no unit that sounds
         const bool knob = src >= 8 && src <= 15;

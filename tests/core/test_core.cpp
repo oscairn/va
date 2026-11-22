@@ -130,6 +130,9 @@ static void testCoverage() {
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetCurveType);
     p.set(Box3ControllerSetCurveType, 0); p.set(Box3ControllerSetDestination, 150);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetDestination);
+    // classified: an effect's parameter or a send is the host's; a box on a unit out of scope says so
+    for (int d : {1, 34, 50, 51, 356, 369}) { p.set(Box3ControllerSetDestination, d); CHECK(notCovered(p, g, 64) == 1 && std::strstr(g[0].why, "the host's")); }
+    for (int d : {128, 131, 134, 135, 138, 406}) { p.set(Box3ControllerSetDestination, d); CHECK(notCovered(p, g, 64) == 1 && std::strstr(g[0].why, "out of scope")); }
     p.set(Box3ControllerSetRatio, 128);  // ratio 0 drives nothing, whatever the destination
     CHECK(notCovered(p, g, 64) == 0);
     CHECK(keySounds(probeA(), 84, 100) && keySounds(probeA(), 96, 1) && !keySounds(probeA(), 60, 100) && !keySounds(probeA(), 97, 100));
