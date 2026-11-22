@@ -1035,6 +1035,36 @@ static void testBoxDestinations() {
     const double hz = up > 1 ? 44100 * (up - 1) / (last - first) : 0;
     std::printf("box on the pitch LFO's speed, ratio +16: %.2f Hz (reference 17.50)\n", hz);
     CHECK(std::fabs(hz / 17.50 - 1) < 0.02);
+    // every LFO's speed (119; va-coverage-2026-11-22 B, each LFO at speed 150 with key-on reset): +8 at a full box (51 steps) sounds as the
+    // static 201 on the pitch, filter, amplitude and oscillator LFOs (the reference's rates 4.3755 / 4.3717 / 4.3721 Hz against 4.3753
+    // for the static); with 401 at +8 as well, each destination's steps add: 252 (16.990 Hz against the static 252's 16.992, 253's 17.495)
+    {
+        const std::string lfo = "Osc1OscillatorWave=4 Osc1OscillatorOutLevel=511 Osc1OscillatorPitchLFODepth=300 PitchLFOWave=3 PitchLFOKeyOnReset=1 "
+                                "Filter1FilterType=1 Filter1FilterCutoff=500 Filter1FilterCutoffLFODepth=352 FilterCutoffLFOWave=3 FilterCutoffLFOKeyOnReset=1 "
+                                "FilterCutoffLFOSpeed=150 AmplitudeLevelLFODepth=192 AmplitudeLFOWave=3 AmplitudeLFOKeyOnReset=1 AmplitudeLFOSpeed=150 ";
+        auto same = [&](const std::string& a, const std::string& b, const char* what) {
+            std::vector<float> x, y;
+            harmonics((lfo + a).c_str(), 48, h, 1, 4410, 88200, &x); harmonics((lfo + b).c_str(), 48, h, 1, 4410, 88200, &y);
+            double d = 0, e = 0; for (size_t i = 0; i < x.size(); ++i) { d += double(x[i] - y[i]) * (x[i] - y[i]); e += double(y[i]) * y[i]; }
+            std::printf("box on every LFO's speed, %s: %.1e relative\n", what, std::sqrt(d / (e + 1e-30)));
+            CHECK(e > 0 && d < 1e-6 * e);
+        };
+        same(box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 PitchLFOSpeed=150 FilterCutoffLFOSpeed=150 AmplitudeLFOSpeed=150",
+             "PitchLFOSpeed=201 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "+8 against the static 201");
+        same(box + "Box2ControllerSetSwitch=1 Box2ControllerSetSource=8 Box2ControllerSetPolarity=0 Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 "
+                   "Box2ControllerSetDestination=401 Box2ControllerSetRatio=136 PitchLFOSpeed=150 FilterCutoffLFOSpeed=150 AmplitudeLFOSpeed=150",
+             "PitchLFOSpeed=252 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "with 401, against the static 252");
+        same(box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 Osc1OscillatorWave=2 Osc1OscillatorPulseWidthLFODepth=192 "
+                   "Osc1OscillatorLFOWave=3 Osc1OscillatorLFOSpeed=150 Osc1OscillatorLFOKeyOnReset=1 PitchLFOSpeed=150",
+             "Osc1OscillatorWave=2 Osc1OscillatorPulseWidthLFODepth=192 Osc1OscillatorLFOWave=3 Osc1OscillatorLFOSpeed=201 Osc1OscillatorLFOKeyOnReset=1 "
+             "PitchLFOSpeed=201 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "the oscillator's LFO");
+        Gap g[64]; Patch q; char e[400];
+        readPatch(("vcore-patch/1 " + lfo + box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 PitchLFOSpeed=150").c_str(), q, e, sizeof e);
+        q.set(Filter1FilterResonance, 0);
+        CHECK(notCovered(q, g, 64) == 0);
+        q.set(AmplitudeLFOSpeed, 300);  // +51: past 320, audio rate
+        CHECK(notCovered(q, g, 64) == 1 && g[0].param == AmplitudeLFOSpeed);
+    }
     // the filter LFO's depth (144): +16 from 256 sounds as the static depth 304 (span 192: the reference's swings at +16 / +32 fall
     // between its static depths 256-320 / 320-384 where 304 / 352 predict them)
     const std::string flt = "Osc1OscillatorWave=0 Osc1OscillatorOutLevel=511 Filter1FilterType=1 Filter1FilterCutoff=500 FilterCutoffLFOWave=3 "

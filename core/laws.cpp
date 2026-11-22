@@ -362,6 +362,7 @@ const DestDef kDestDefs[kDests] = {
     {255, 0, 255}, {255, 0, 255}, {192, 64, 448}, {415, 0, 415}, {3600, -3600, 3600}, {3600, -3600, 3600}, {3600, -3600, 3600},
     {127, 0, 127},  // va-round6 A1 / round 7 A2: the portamento time (127 at a full box; a glide follows it: Core::render)
     {8192, -8192, 8192},  // va-coverage-2026-11-22 A: the part's pitch, a cent an output unit (+-8192 cents at the box sum's limit)
+    {415, -415, 415},  // va-coverage-2026-11-22 B: every LFO's speed (119), 415 at a full box, added to each LFO's own (401's after its steps)
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
     {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
 
@@ -428,6 +429,8 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.lfoAmp = float(std::copysign(double(at(Law{kLfoAmpX, kLfoAmpY, 17, 0, 127}, float(std::abs(a)))) / 6.0206, double(a)));
         s.lfo[2].phase0 = s.lfo[2].phase0 + 0.25f - (s.lfo[2].phase0 >= 0.75f ? 1.f : 0.f);
     }
+    s.lfoSpeed[0] = int16_t(q[FilterCutoffLFOSpeed]); s.lfoSpeed[1] = int16_t(q[AmplitudeLFOSpeed]);
+    s.lfoSpeed[2] = int16_t(q[Osc1OscillatorLFOSpeed]); s.lfoSpeed[3] = int16_t(q[Osc2OscillatorLFOSpeed]);
     unisonLaws(s, q);
     s.porta = q[PortamentoMaster] && q[PartPortamentoSwitch];
     s.portaFull = q[PartPortamentoMode] != 0;
@@ -524,6 +527,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) aim(Dest(DWave1 + n)); break;
         case kDestPorta: if (s.porta) aim(DPorta); break;
         case kDestPitch: aim(DPitch); break;
+        case kDestLfoAll: aim(DLfoAll); break;
         default: break;
         }
         if (s.targets == before) continue;

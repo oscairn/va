@@ -159,6 +159,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
         case kDestWave: for (int n = 0; n < 3; ++n) if (oscOn(n)) d[nd++] = Dest(DWave1 + n); break;
         case kDestPorta: if (q[PortamentoMaster] && q[PartPortamentoSwitch]) d[nd++] = DPorta; break;
         case kDestPitch: d[nd++] = DPitch; break;
+        case kDestLfoAll: d[nd++] = DLfoAll; break;
         default: g.add(box(b, Box1ControllerSetDestination), unbuiltDest(dest)); continue;
         }
         if (!nd) continue;  // reaches no unit that sounds
@@ -194,7 +195,7 @@ void reach(const Patch& q, Gaps& g, Reach& r) {
                             q[FilterCutoffEGDecayTime], q[FilterCutoffEGReleaseTime], q[AmplitudeEGAttackTime], q[AmplitudeEGDecayTime],
                             q[AmplitudeEGReleaseTime], q[Osc3OscillatorPitchLFODepth], q[Filter2FilterCutoff], q[Filter2FilterCutoffEGDepth] - 256,
                             q[Filter2FilterResonance], q[Osc1OscillatorPulseWidth], q[Osc2OscillatorPulseWidth], q[Filter1FilterCutoffLFODepth],
-                            q[PitchLFOSpeed], 0, 0, 0, q[PartPortamentoTime], 0, q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
+                            q[PitchLFOSpeed], 0, 0, 0, q[PartPortamentoTime], 0, 0, q[Osc1OscillatorWave], q[Osc2OscillatorWave], q[Osc3OscillatorWave]};
     for (int d = 0; d < kDests; ++d) {
         auto at = [&](float t) {
             t = t < -8192 ? -8192 : t > 8192 ? 8192 : t;
@@ -327,6 +328,12 @@ uint32_t notCovered(const Patch& q, Gap* out, uint32_t cap) {
             g.add(Filter1FilterCutoffLFODepth, "filter LFO depth (with its boxes): verified up to 128 steps from 256");
     }
     if (d.lfo[0] && r.moved[DLfoSpeed] && r.hi[DLfoSpeed] > 320) g.add(PitchLFOSpeed, "pitch LFO speed (with its boxes) over 320: audio rate, not built");
+    if (r.moved[DLfoAll]) {  // every LFO's speed (119) adds to each one's own
+        const bool on[5] = {d.lfo[0], d.lfo[1], d.lfo[2], d.oscLfo[0], d.oscLfo[1]};
+        const Param sp[5] = {PitchLFOSpeed, FilterCutoffLFOSpeed, AmplitudeLFOSpeed, Osc1OscillatorLFOSpeed, Osc2OscillatorLFOSpeed};
+        for (int k = 0; k < 5; ++k)
+            if (on[k] && (k ? q[sp[k]] : r.hi[DLfoSpeed]) + r.hi[DLfoAll] > 320) g.add(sp[k], "LFO speed (with its boxes) over 320: audio rate, not built");
+    }
     if (d.lfo[2]) {
         g.need(q, AmplitudeLFOSpeed, 0, 320, "amplitude LFO speed over 320: audio rate, not built");
         g.need(q, AmplitudeLFOWave, 3, 3, "amplitude LFO wave: only the sine's phase is measured");

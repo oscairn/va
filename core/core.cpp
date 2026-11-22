@@ -20,8 +20,8 @@ struct Ctl {  // one sound's constants for one control step of n frames
     float piOverSr;
     float cut[2], feg[2], res[2];             // each filter's cutoff, EG move at level 1 (semitones) and resonance, with the boxes now
     float lfoPitch[3], osc[3];                // pitch LFO depth (semitones), oscillator out level (linear)
-    float freq[3], pwRaw[2], lfoCut, lfoRate; // the boxes' frequency offsets (semitones), pulse widths (raw), filter LFO depth
-                                              // (semitones), pitch LFO speed (cycles a frame)
+    float freq[3], pwRaw[2], lfoCut;          // the boxes' frequency offsets (semitones), pulse widths (raw), filter LFO depth (semitones)
+    float lfoRate[5];                         // the pitch, filter, amplitude and oscillators 1-2's LFO speeds (cycles a frame)
     const float* tab[3]; float stride[3];     // each oscillator's table set and level stride (a box may change its wave)
     float portaRate;                          // the glide's rate (semitones a frame; time modes 0 and 2)
     float lk[8];                              // the envelopes' per-frame log2 coefficients (ka..frl over a frame)
@@ -323,20 +323,20 @@ VC_INLINE void controlBody(const Lane& l, const Sound& s, const Ctl& c) {
         l.set(LT, t);
         vf m;
         if (s.plan.lfo[0]) {
-            vf v = lfoStep(l, s.lfo[0], c.lfoRate, c.n, LP0, LR0, t, m);  // m is the call's output: read only after it (argument order is unspecified)
+            vf v = lfoStep(l, s.lfo[0], c.lfoRate[0], c.n, LP0, LR0, t, m);  // m is the call's output: read only after it (argument order is unspecified)
             v = v * m;
             lp1 = v * splat(c.lfoPitch[0]); lp2 = v * splat(c.lfoPitch[1]); lp3 = v * splat(c.lfoPitch[2]);
         }
         for (int o = 0; o < 2; ++o)  // the pulse width, moved by the oscillator's own LFO: raw + depth x value through the width law
             if (s.plan.oscLfo[o]) {
-                vf v = lfoStep(l, s.oscLfo[o], s.oscLfo[o].rate, c.n, LO1 + o, LOR1 + o, t, m);
+                vf v = lfoStep(l, s.oscLfo[o], c.lfoRate[3 + o], c.n, LO1 + o, LOR1 + o, t, m);
                 v = v * m;
                 const vf w = vmax(vmin(fma(fma(v, splat(s.pwDepth[o]), splat(c.pwRaw[o])), splat(0.98f / 256.f), splat(0.01f)), splat(0.99f)), splat(0.01f));
                 l.ramp(PW1 + 2 * o, DPW1 + 2 * o, w, fresh, rn);
             }
-        if (s.plan.lfo[1]) { const vf v = lfoStep(l, s.lfo[1], s.lfo[1].rate, c.n, LP1, LR1, t, m); lcut = v * m * splat(c.lfoCut); }
+        if (s.plan.lfo[1]) { const vf v = lfoStep(l, s.lfo[1], c.lfoRate[1], c.n, LP1, LR1, t, m); lcut = v * m * splat(c.lfoCut); }
         // amplitude: dB = -depth (1 - value): the top is the level (measured); the delay and fade-in scale the depth (not measured)
-        if (s.plan.lfo[2]) { const vf v = lfoStep(l, s.lfo[2], s.lfo[2].rate, c.n, LP2, LR2, t, m); lamp = (v * splat(s.lfoAmp) - splat(s.lfoAmp < 0 ? -s.lfoAmp : s.lfoAmp)) * m; }
+        if (s.plan.lfo[2]) { const vf v = lfoStep(l, s.lfo[2], c.lfoRate[2], c.n, LP2, LR2, t, m); lamp = (v * splat(s.lfoAmp) - splat(s.lfoAmp < 0 ? -s.lfoAmp : s.lfoAmp)) * m; }
     }
     // drift: advance each oscillator's knot phase; a new uniform knot when it wraps (per lane, control rate)
     for (int i = 0; i < W; ++i) {
@@ -876,7 +876,9 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
         c.osc[0] = s.osc[0]; c.osc[1] = s.osc[1]; c.osc[2] = s.osc[2];
         for (int o = 0; o < 3; ++o) { c.tab[o] = s.tab[o]; c.stride[o] = s.stride[o]; }
         c.portaRate = s.portaRate;
-        c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut; c.lfoRate = s.lfo[0].rate;
+        c.freq[0] = c.freq[1] = c.freq[2] = 0; c.pwRaw[0] = s.pwRaw[0]; c.pwRaw[1] = s.pwRaw[1]; c.lfoCut = s.lfoCut;
+        for (int k = 0; k < 3; ++k) c.lfoRate[k] = s.lfo[k].rate;
+        c.lfoRate[3] = s.oscLfo[0].rate; c.lfoRate[4] = s.oscLfo[1].rate;
         if (s.boxes || live_[si]) {  // the destinations the boxes (or the host) move, at the sources' values now (tables: no libm)
             int16_t raw[kDests];
             float src[kSources];
@@ -900,7 +902,15 @@ void Core::render(float* const* L, float* const* R, uint32_t frames, uint32_t on
             for (int o = 0; o < 3; ++o)  // a wave the boxes moved (coverage: only where no pulse of another width than 0.5 is involved)
                 if (raw[DWave1 + o] != s.stored[DWave1 + o]) { c.tab[o] = waveTable(raw[DWave1 + o], true); c.stride[o] = raw[DWave1 + o] == 4 ? 0.f : float(kTabN + 1); }
             if (raw[DPorta] != s.stored[DPorta]) c.portaRate = t.portaRate[raw[DPorta]] * float(1 / sr_);
-            if (raw[DLfoSpeed] != s.stored[DLfoSpeed]) { const float r = t.lfoHz[raw[DLfoSpeed]] * float(1 / sr_); c.lfoRate = r < kLfoMaxRate ? r : kLfoMaxRate; }
+            // the pitch LFO's own speed (401) and every LFO's (119), each destination's steps added to the stored speed, within 0-415
+            if (raw[DLfoSpeed] != s.stored[DLfoSpeed] || raw[DLfoAll]) {
+                const int st[5] = {raw[DLfoSpeed], s.lfoSpeed[0], s.lfoSpeed[1], s.lfoSpeed[2], s.lfoSpeed[3]};
+                for (int k = 0; k < 5; ++k) {
+                    if (k && !raw[DLfoAll]) break;
+                    const int v = st[k] + raw[DLfoAll], u = v < 0 ? 0 : v > 415 ? 415 : v;
+                    const float r = t.lfoHz[u] * float(1 / sr_); c.lfoRate[k] = r < kLfoMaxRate ? r : kLfoMaxRate;
+                }
+            }
             const float k = -s.invSrLn2;
             auto tau = [&](int kind, int d, float stored) { return raw[d] == s.stored[d] ? stored : k * t.invTau[kind][raw[d]]; };
             la = tau(TAttack, DAmpAttack, la); ld = tau(TAmpDecay, DAmpDecay, ld);

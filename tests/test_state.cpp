@@ -6,8 +6,8 @@
 TEST(parameter_metadata) {
     Inst a(false);
     const uint32_t n = a.params->count(a.p);
-    CHECK_EQ(n, 46u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
-                       // the oscillators' waves and the portamento time (destinations, 40-43; docs/parameters.md), the output bus (44), the pitch (45)
+    CHECK_EQ(n, 47u);  // level, pan, polyphony limit, knobs 1-8, ribbon, switches 1-2, 24 destinations (ids 14-37), foot controller 2 and foot switch (38-39),
+                       // the oscillators' waves and the portamento time (destinations, 40-43; docs/parameters.md), the output bus (44), the pitch and every LFO's speed (destinations, 45-46)
     std::vector<clap_id> seen;
     for (uint32_t i = 0; i < n; ++i) {
         clap_param_info_t info{};
@@ -17,7 +17,7 @@ TEST(parameter_metadata) {
         CHECK(std::isfinite(info.min_value) && info.min_value <= info.default_value && info.default_value <= info.max_value);
         CHECK(info.name[0] != 0);
         // a destination shows the sound's own value (the test sound's amplitude release is 112), the others their default
-        const bool dest = (info.id >= 14 && info.id <= 37) || (info.id >= 40 && info.id <= 43) || info.id == 45;  // 44: the output bus
+        const bool dest = (info.id >= 14 && info.id <= 37) || (info.id >= 40 && info.id <= 43) || info.id == 45 || info.id == 46;  // 44: the output bus
         if (!dest) CHECK(std::fabs(a.value(info.id) - info.default_value) < 1e-6);
         else CHECK(a.value(info.id) >= info.min_value && a.value(info.id) <= info.max_value);
         CHECK(((info.flags & CLAP_PARAM_IS_MODULATABLE) != 0) == dest);
