@@ -34,15 +34,15 @@ constexpr uint32_t kPorts = kContexts + 1;  // stereo output ports: main and a s
 // box destinations the core moves (vcore::Dest order), in the patch's raw units: a value event sets the destination, a
 // modulation adds raw steps to it with its boxes (docs/parameters.md); their values live in the raw patch.
 enum Param : uint32_t { kLevel, kPan, kPolyphony, kKnob1, kKnob8 = kKnob1 + 7, kRibbon, kSwitch1, kSwitch2, kStateCount,
-                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kPortaTime, kBus, kPitch, kLfoAll, kParamCount };
+                        kDest0 = kStateCount, kDestLast = kDest0 + vcore::DFreq3, kFoot2, kFootSwitch, kWave1, kWave3 = kWave1 + 2, kPortaTime, kBus, kPitch, kLfoAll, kAmpLfo, kParamCount };
 // A parameter's destination (vcore::Dest; -1: not a destination) and a destination's parameter: ids 14-37, then the oscillators' waves
-// (40-42) and the portamento time (43), added after the foot controls, and the part's pitch and every LFO's speed (45, 46), after the output bus (ids are never
+// (40-42) and the portamento time (43), added after the foot controls, the part's pitch, every LFO's speed and the amplitude LFO's depth (45-47), after the output bus (ids are never
 // renumbered).
 constexpr int destOf(uint32_t p) {
-    return p >= kDest0 && p <= kDestLast ? int(p - kDest0) : p >= kWave1 && p <= kWave3 ? int(vcore::DWave1 + (p - kWave1)) : p == kPortaTime ? int(vcore::DPorta) : p == kPitch ? int(vcore::DPitch) : p == kLfoAll ? int(vcore::DLfoAll) : -1;
+    return p >= kDest0 && p <= kDestLast ? int(p - kDest0) : p >= kWave1 && p <= kWave3 ? int(vcore::DWave1 + (p - kWave1)) : p == kPortaTime ? int(vcore::DPorta) : p == kPitch ? int(vcore::DPitch) : p == kLfoAll ? int(vcore::DLfoAll) : p == kAmpLfo ? int(vcore::DAmpLfo) : -1;
 }
 constexpr uint32_t paramOf(int d) {
-    return d <= vcore::DFreq3 ? kDest0 + uint32_t(d) : d == vcore::DPorta ? uint32_t(kPortaTime) : d == vcore::DPitch ? uint32_t(kPitch) : d == vcore::DLfoAll ? uint32_t(kLfoAll) : kWave1 + uint32_t(d - vcore::DWave1);
+    return d <= vcore::DFreq3 ? kDest0 + uint32_t(d) : d == vcore::DPorta ? uint32_t(kPortaTime) : d == vcore::DPitch ? uint32_t(kPitch) : d == vcore::DLfoAll ? uint32_t(kLfoAll) : d == vcore::DAmpLfo ? uint32_t(kAmpLfo) : kWave1 + uint32_t(d - vcore::DWave1);
 }
 struct ParamInfo { const char* name; const char* key; double min, max, def; bool stepped; };
 inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination parameter's raw patch parameter
@@ -52,7 +52,7 @@ inline constexpr vcore::Param kDestRaw[vcore::kDests] = {  // each destination p
     vcore::AmplitudeEGReleaseTime, vcore::Osc3OscillatorPitchLFODepth, vcore::Filter2FilterCutoff, vcore::Filter2FilterCutoffEGDepth,
     vcore::Filter2FilterResonance, vcore::Osc1OscillatorPulseWidth, vcore::Osc2OscillatorPulseWidth, vcore::Filter1FilterCutoffLFODepth,
     vcore::PitchLFOSpeed, vcore::kParamCount, vcore::kParamCount, vcore::kParamCount,  // kParamCount: no patch parameter (the frequency offsets)
-    vcore::PartPortamentoTime, vcore::kParamCount, vcore::kParamCount, vcore::Osc1OscillatorWave, vcore::Osc2OscillatorWave, vcore::Osc3OscillatorWave};
+    vcore::PartPortamentoTime, vcore::kParamCount, vcore::kParamCount, vcore::AmplitudeLevelLFODepth, vcore::Osc1OscillatorWave, vcore::Osc2OscillatorWave, vcore::Osc3OscillatorWave};
 // Whether a destination parameter is a raw patch parameter (saved with the patch); the frequency offsets, the pitch and every LFO's speed are not (they
 // start at 0).
 constexpr bool hasRaw(int d) { return kDestRaw[d] != vcore::kParamCount; }
@@ -76,7 +76,7 @@ inline constexpr ParamInfo kParams[] = {
     {"Foot Controller 2", "foot2", 0, 1, 1, false}, {"Foot Switch", "footswitch", 0, 1, 0, true},
     {"Osc 1 Wave", "", 0, 4, 0, true}, {"Osc 2 Wave", "", 0, 4, 0, true}, {"Osc 3 Wave", "", 0, 4, 0, true}, {"Portamento Time", "", 0, 127, 64, false},
     {"Output Bus", "bus", 0, kContexts, 0, true}, {"Pitch (cents)", "", -8192, 8192, 0, false},
-    {"LFO Speed (all)", "", -415, 415, 0, false}};
+    {"LFO Speed (all)", "", -415, 415, 0, false}, {"Amp LFO Depth", "", 1, 255, 128, false}};
 static_assert(sizeof kParams / sizeof kParams[0] == kParamCount, "one entry a parameter");
 
 // A float that can be copied (a Patch is copied) and read by one thread while another writes it.

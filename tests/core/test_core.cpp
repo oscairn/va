@@ -3,6 +3,7 @@
 // and the cross-build statistics of a fixed sequence (every target must stay within kTolerance of
 // the stored values). VC_WRITE_STATS=1 prints the statistics in the form of probeA_stats.inc instead.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -128,7 +129,7 @@ static void testCoverage() {
     CHECK(notCovered(p, g, 64) == 0);
     p.set(Box3ControllerSetSource, 1); p.set(Box3ControllerSetCurveType, 5);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetCurveType);
-    p.set(Box3ControllerSetCurveType, 0); p.set(Box3ControllerSetDestination, 150);
+    p.set(Box3ControllerSetCurveType, 0); p.set(Box3ControllerSetDestination, 146);
     CHECK(notCovered(p, g, 64) == 1 && g[0].param == Box3ControllerSetDestination);
     // classified: an effect's parameter or a send is the host's; a box on a unit out of scope says so
     for (int d : {1, 34, 50, 51, 356, 369}) { p.set(Box3ControllerSetDestination, d); CHECK(notCovered(p, g, 64) == 1 && std::strstr(g[0].why, "the host's")); }
@@ -1046,18 +1047,24 @@ static void testBoxDestinations() {
             std::vector<float> x, y;
             harmonics((lfo + a).c_str(), 48, h, 1, 4410, 88200, &x); harmonics((lfo + b).c_str(), 48, h, 1, 4410, 88200, &y);
             double d = 0, e = 0; for (size_t i = 0; i < x.size(); ++i) { d += double(x[i] - y[i]) * (x[i] - y[i]); e += double(y[i]) * y[i]; }
-            std::printf("box on every LFO's speed, %s: %.1e relative\n", what, std::sqrt(d / (e + 1e-30)));
+            std::printf("box: %s: %.1e relative\n", what, std::sqrt(d / (e + 1e-30)));
             CHECK(e > 0 && d < 1e-6 * e);
         };
         same(box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 PitchLFOSpeed=150 FilterCutoffLFOSpeed=150 AmplitudeLFOSpeed=150",
-             "PitchLFOSpeed=201 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "+8 against the static 201");
+             "PitchLFOSpeed=201 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "every LFO's speed (119) +8 against the static 201");
         same(box + "Box2ControllerSetSwitch=1 Box2ControllerSetSource=8 Box2ControllerSetPolarity=0 Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 "
                    "Box2ControllerSetDestination=401 Box2ControllerSetRatio=136 PitchLFOSpeed=150 FilterCutoffLFOSpeed=150 AmplitudeLFOSpeed=150",
-             "PitchLFOSpeed=252 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "with 401, against the static 252");
+             "PitchLFOSpeed=252 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "119 with 401, against the static 252");
         same(box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 Osc1OscillatorWave=2 Osc1OscillatorPulseWidthLFODepth=192 "
                    "Osc1OscillatorLFOWave=3 Osc1OscillatorLFOSpeed=150 Osc1OscillatorLFOKeyOnReset=1 PitchLFOSpeed=150",
              "Osc1OscillatorWave=2 Osc1OscillatorPulseWidthLFODepth=192 Osc1OscillatorLFOWave=3 Osc1OscillatorLFOSpeed=201 Osc1OscillatorLFOKeyOnReset=1 "
-             "PitchLFOSpeed=201 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "the oscillator's LFO");
+             "PitchLFOSpeed=201 FilterCutoffLFOSpeed=201 AmplitudeLFOSpeed=201", "119 on the oscillator's LFO");
+        // the amplitude LFO's depth (150; C: the level's swing at speed 200): span 127, +8 / +16 / -16 / +64 from 128 and +16 from 160
+        // swing as the static 143 / 159 / 97 / 255 / 191 (1.871 / 4.484 / 4.486 / 95.655 / 11.582 dB against 1.870 / 4.485 / - / 95.652 /
+        // 11.584)
+        for (const auto& c : {std::array<int, 3>{128, 136, 143}, {128, 144, 159}, {128, 112, 97}, {128, 192, 255}, {160, 144, 191}})
+            same(box + "Box1ControllerSetDestination=150 Box1ControllerSetRatio=" + std::to_string(c[1]) + " AmplitudeLevelLFODepth=" + std::to_string(c[0]),
+                 "AmplitudeLevelLFODepth=" + std::to_string(c[2]), "the amplitude LFO's depth (150) against its static landing");
         Gap g[64]; Patch q; char e[400];
         readPatch(("vcore-patch/1 " + lfo + box + "Box1ControllerSetDestination=119 Box1ControllerSetRatio=136 PitchLFOSpeed=150").c_str(), q, e, sizeof e);
         q.set(Filter1FilterResonance, 0);

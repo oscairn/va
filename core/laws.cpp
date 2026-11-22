@@ -120,6 +120,8 @@ constexpr int kLfoDepthN = sizeof kLfoDepthX / sizeof kLfoDepthX[0];
 constexpr double kLfoCutCentsPerStep = 25.17;
 constexpr float kLfoAmpX[] = {0, 4, 8, 12, 16, 24, 32, 40, 48, 64, 80, 96, 104, 112, 120, 124, 127};
 constexpr float kLfoAmpY[] = {0, 0.188f, 0.378f, 0.753f, 1.13f, 1.693f, 2.45f, 3.198f, 3.951f, 6.02f, 8.466f, 12.04f, 14.487f, 18.062f, 24.271f, 30.479f, 48.164f};
+// the amplitude LFO's depth (steps from 128) as lfoAmp (log2 gain at the LFO's value 1; the sign inverts)
+float lfoAmpLaw(int a) { return float(std::copysign(double(at(Law{kLfoAmpX, kLfoAmpY, 17, 0, 127}, float(std::abs(a)))) / 6.0206, double(a))); }
 // Delay: 0.00563 d^1.5 s (8-96, within 0.5 %); the LFO runs from the note-on and the delay gates it. Fade-in: the level
 // rises as 1 - (1 - u)^2 over 2^((x - 154.5) / 15.7) s (96-214; 128-214 within 1 %).
 constexpr float kLfoPhaseDeg[] = {0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330};
@@ -312,6 +314,7 @@ static bool buildLaws() {
     for (int i = 0; i < 512; ++i) gLaw.oscLevel[i] = oscLevel(i);
     for (int i = 0; i <= 415; ++i) gLaw.lfoHz[i] = float(lfoHz(i));
     for (int i = 0; i < 128; ++i) gLaw.portaRate[i] = float(portaRate(i));
+    for (int i = 0; i < 256; ++i) gLaw.lfoAmp[i] = lfoAmpLaw(i - 128);
     for (int i = 0; i < 256; ++i) {
         gLaw.resGain[i] = float(std::pow(10.0, at(Law{kResGainX, kResGainY, kResGainN, 0, 255}, float(i)) / 20));
         gLaw.invTau[TAttack][i] = float(1 / attackTau(i));
@@ -363,6 +366,7 @@ const DestDef kDestDefs[kDests] = {
     {127, 0, 127},  // va-round6 A1 / round 7 A2: the portamento time (127 at a full box; a glide follows it: Core::render)
     {8192, -8192, 8192},  // va-coverage-2026-11-22 A: the part's pitch, a cent an output unit (+-8192 cents at the box sum's limit)
     {415, -415, 415},  // va-coverage-2026-11-22 B: every LFO's speed (119), 415 at a full box, added to each LFO's own (401's after its steps)
+    {127, 1, 255},  // va-coverage-2026-11-22 C: the amplitude LFO's depth (150), 127 at a full box within its range
     // va-round7 A2: the oscillators' wave (4 steps at a full box, rounded half away from zero: boxRaw)
     {4, 0, 4}, {4, 0, 4}, {4, 0, 4}};
 
@@ -426,7 +430,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
     s.lfoCutPerStep = float(kLfoCutCentsPerStep / 100);
     {
         const int a = q[AmplitudeLevelLFODepth] - 128;
-        s.lfoAmp = float(std::copysign(double(at(Law{kLfoAmpX, kLfoAmpY, 17, 0, 127}, float(std::abs(a)))) / 6.0206, double(a)));
+        s.lfoAmp = lfoAmpLaw(a);
         s.lfo[2].phase0 = s.lfo[2].phase0 + 0.25f - (s.lfo[2].phase0 >= 0.75f ? 1.f : 0.f);
     }
     s.lfoSpeed[0] = int16_t(q[FilterCutoffLFOSpeed]); s.lfoSpeed[1] = int16_t(q[AmplitudeLFOSpeed]);
@@ -496,6 +500,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         s.stored[DLfoCutDepth] = int16_t(q[Filter1FilterCutoffLFODepth]); s.stored[DLfoSpeed] = int16_t(q[PitchLFOSpeed]);
         for (int n = 0; n < 3; ++n) s.stored[DWave1 + n] = int16_t(q[Param(Osc1OscillatorWave + n * stride)]);
         s.stored[DPorta] = int16_t(q[PartPortamentoTime]);
+        s.stored[DAmpLfo] = int16_t(q[AmplitudeLevelLFODepth]);
     }
     const int bs = Box2ControllerSetSwitch - Box1ControllerSetSwitch;
     for (int b = 0; b < 16; ++b) {
@@ -528,6 +533,7 @@ void applyLaws(Sound& s, const Patch& q, double sr) {
         case kDestPorta: if (s.porta) aim(DPorta); break;
         case kDestPitch: aim(DPitch); break;
         case kDestLfoAll: aim(DLfoAll); break;
+        case kDestAmpLfo: aim(DAmpLfo); break;
         default: break;
         }
         if (s.targets == before) continue;

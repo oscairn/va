@@ -41,7 +41,7 @@ parameter id.
 
 | Gap | Performances (stock) | Parts (stock) | Changes the sound | Status |
 |---|---|---|---|---|
-| `BoxN ControllerSetDestination`: controller box destination: not built | 474 | 683 | yes | partly done (0.11.5): the report names each destination's class: the host's (an effect's parameter, a send, the arpeggio, the motion sequence, the part's pan), out of scope (self sync, wave shaper, FM, ring, noise, the modifier), not built (the pitch and pulse width EGs, the part LFO); played since: 54 (the part's pitch), 119 (every LFO's speed) |
+| `BoxN ControllerSetDestination`: controller box destination: not built | 474 | 683 | yes | partly done (0.11.5): the report names each destination's class: the host's (an effect's parameter, a send, the arpeggio, the motion sequence, the part's pan), out of scope (self sync, wave shaper, FM, ring, noise, the modifier), not built (the pitch and pulse width EGs, the part LFO); played since: 54 (the part's pitch), 119 (every LFO's speed), 150 (the amplitude LFO's depth) |
 | `AmplitudeLevelVelocitySensitivity`: velocity sensitivity: measured only at 0 (no effect) | 202 | 312 | yes | open |
 | `Filter1FilterSaturatorDrive`: saturator drive: measured at 0, 2, 4, 7, 8, 12, 15, 16 and 23 | 188 | 272 | yes | open |
 | `PartKeyControllerSet1Switch`: key controller boxes: not built | 164 | 220 | yes | open |
