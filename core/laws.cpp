@@ -304,9 +304,12 @@ static bool buildTables() {
         for (int k = 0; k <= kTabN; ++k) q[k] = t[k] - t[(k + kTabN / 2) & (kTabN - 1)];
         float* tri = t + 2 * kLevels * (kTabN + 1);
         float* s2 = t + 3 * kLevels * (kTabN + 1);
+        double g[kTabN / 2];  // the triangle's gain a harmonic (left-to-right, as the product it replaces)
+        const double r0 = rolloffDb(f0);
+        for (int h = 1; h <= H; h += 2) g[h] = c[1] * 1.496 * ((h >> 1) & 1 ? -1 : 1) / (double(h) * h) * std::pow(10.0, (rolloffDb(h * f0) - r0) / 20);
         for (int k = 0; k < kTabN; ++k) {
             double y = 0;
-            for (int h = 1; h <= H; h += 2) y += c[1] * 1.496 * ((h >> 1) & 1 ? -1 : 1) / (double(h) * h) * std::pow(10.0, (rolloffDb(h * f0) - rolloffDb(f0)) / 20) * sn[(h * k) & (kTabN - 1)];
+            for (int h = 1; h <= H; h += 2) y += g[h] * sn[(h * k) & (kTabN - 1)];
             tri[k] = float(y);
             s2[k] = float(1.148 * t[k] + (1.493 - 1.148) * c[1] * sn[k]);
         }
