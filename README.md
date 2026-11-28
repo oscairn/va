@@ -38,6 +38,9 @@ Device voice caps, read when an instance is created: `OSCAIRN_VA_MAX_VOICES` (1 
 instance) and `OSCAIRN_VA_MAX_VOICES_PER_SOUND` (1 to 64, each sound), in engine voices (a unison
 note counts as its 2 or 4; a cap under one note's voices still lets that note sound). Anything else is no cap.
 
+Diagnostics: with `OSCAIRN_VA_TRACE=1` in the environment, the process writes one line to stderr when it builds
+the oscillator tables (once, at the first instance): `oscairn-va: tables built in T ms`. Unset, nothing is read but the variable.
+
 The CLAP headers are vendored in `third_party/clap` and the Oscairn SDK headers in
 `third_party/oscairn-clap` (MIT; the commits are in each `upstream.json`).
 
