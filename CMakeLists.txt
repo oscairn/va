@@ -56,8 +56,9 @@ target_link_libraries(hostbench PRIVATE clap_headers ${CMAKE_DL_LIBS})
 # The tests see only the built .clap, through the CLAP ABI (dlopen); they link no plugin code.
 add_executable(va_tests tests/test_main.cpp tests/alloc_guard.cpp tests/test_notes.cpp tests/test_budget.cpp
     tests/test_state.cpp tests/test_contexts.cpp tests/test_alloc.cpp tests/test_threads.cpp
-    tests/test_fuzz.cpp tests/test_controls.cpp tests/test_sharing.cpp tests/test_sleep.cpp)
+    tests/test_fuzz.cpp tests/test_controls.cpp tests/test_sharing.cpp tests/test_sleep.cpp tests/test_saved_states.cpp)
 target_link_libraries(va_tests PRIVATE clap_headers ${CMAKE_DL_LIBS})
+target_compile_definitions(va_tests PRIVATE VA_STATES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/states")
 if(APPLE)
     # Counts allocations in every image of the process, the plugin's included (alloc_guard.cpp).
     add_library(va_alloc_interpose SHARED tests/alloc_interpose.c)
