@@ -2,7 +2,10 @@
 // The reference's measured laws, applied once per sound at load time (main thread: libm allowed
 // here, never in the audio path). Sources and fit errors: docs/coverage.md.
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #include "vcore.h"
 
@@ -319,7 +322,15 @@ static bool buildTables() {
     for (int k = 0; k <= kTabN; ++k) sine[k] = float(-2 / kPi * 1.832 * sn[k & (kTabN - 1)]);
     return true;
 }
-const float* bandTables() { static const bool built = buildTables(); (void)built; return gTab; }
+static bool buildTablesTraced() {
+    const char* e = std::getenv("OSCAIRN_VA_TRACE");  // "1": one stderr line with the build time (once a process)
+    if (!e || e[0] != '1' || e[1]) return buildTables();
+    const auto t0 = std::chrono::steady_clock::now();
+    buildTables();
+    std::fprintf(stderr, "oscairn-va: tables built in %.1f ms\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+    return true;
+}
+const float* bandTables() { static const bool built = buildTablesTraced(); (void)built; return gTab; }
 
 // ---- laws at every raw value (control rate: the controller boxes move a destination's raw value) ------------------
 namespace {
